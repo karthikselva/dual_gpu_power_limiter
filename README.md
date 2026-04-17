@@ -22,6 +22,12 @@ Simple system telemetry suite for Arduino Mega/Uno and Windows. This project pro
 | :---: | :---: |
 | ![PC GUI](screenshots/IMG_2675.JPEG) | ![Arduino Dashboard](screenshots/IMG_2676.JPEG) |
 
+## 🎯 Who is this for?
+
+1.  **Hardware Enthusiasts & Modders:** For those who want a dedicated real-time hardware dashboard (CPU/GPU load, temps, power) visible through their PC cabinet's glass side panel.
+    *   **Pre-requisites:** Arduino Uno or Mega + 3.5" (or larger) TFT LCD Shield.
+2.  **Power-Conscious Users (Dual GPU/Small Circuits):** For users running high-performance hardware (like Dual RTX 3090/5080) on standard residential circuits (e.g., 6A sockets in India) who need to monitor real-time wattage to prevent tripping breakers or damaging electrical infrastructure.
+
 ## 🏗 Architecture & Summary
 
 The system follows a **Producer-Dual Consumer** model with an integrated **Control Feedback** loop:
