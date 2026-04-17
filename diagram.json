@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "author": "Gemini CLI",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "wokwi-arduino-mega2560", "id": "mega", "top": 200, "left": 0, "attrs": {} },
+    {
+      "type": "wokwi-ili9341",
+      "id": "tft",
+      "top": -150,
+      "left": 100,
+      "attrs": { "display": "ili9488" }
+    }
+  ],
+  "connections": [
+    [ "mega:GND.1", "tft:GND", "black", [ "v0" ] ],
+    [ "mega:5V", "tft:VCC", "red", [ "v0" ] ],
+    
+    [ "mega:A3", "tft:CS", "orange", [ "v0" ] ],
+    [ "mega:A2", "tft:RS", "orange", [ "v0" ] ],
+    [ "mega:A1", "tft:WR", "orange", [ "v0" ] ],
+    [ "mega:A0", "tft:RD", "orange", [ "v0" ] ],
+    [ "mega:A4", "tft:RST", "orange", [ "v0" ] ],
+
+    [ "mega:22", "tft:D0", "blue", [ "v0" ] ],
+    [ "mega:23", "tft:D1", "blue", [ "v0" ] ],
+    [ "mega:24", "tft:D2", "blue", [ "v0" ] ],
+    [ "mega:25", "tft:D3", "blue", [ "v0" ] ],
+    [ "mega:26", "tft:D4", "blue", [ "v0" ] ],
+    [ "mega:27", "tft:D5", "blue", [ "v0" ] ],
+    [ "mega:28", "tft:D6", "blue", [ "v0" ] ],
+    [ "mega:29", "tft:D7", "blue", [ "v0" ] ]
+  ],
+  "dependencies": {}
+}
