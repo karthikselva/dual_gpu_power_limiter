@@ -1,3 +1,17 @@
+## ⚠️ Safety & Power Management (Dual GPU Context)
+
+Running a dual GPU setup with a **RTX 3090** and **RTX 5080** on a standard **1000W PSU** presents significant electrical challenges, particularly during long-running Machine Learning tasks (LoRA training, LLM inference).
+
+### The Challenge
+1.  **Transient Power Spikes:** High-end GPUs are notorious for "micro-spikes" (millisecond-duration transients) that can exceed their rated TDP significantly. Combined, these spikes can overwhelm a 1000W PSU's OCP (Over-Current Protection), leading to sudden system shutdowns or hardware stress.
+2.  **Infrastructure Limits (India):** In many Indian residential settings, standard power sockets are rated for **6A**. At 230V, while the theoretical limit is ~1380W, sustained high-wattage draw (especially on shared circuits with aging wiring) risks overheating sockets or tripping breakers. 
+3.  **Economic Constraints:** Upgrading to high-tier 1200W-1600W PSUs involves exponentially rising costs. Additionally, many of these PSUs require 16A industrial-style sockets, which necessitates expensive electrical modifications to the room.
+
+### The Solution
+This project provides a software-controlled safety layer:
+*   **Active Monitoring:** Real-time visibility into "Actual vs Limit" wattage on both the Arduino and the PC GUI allows you to see exactly how much headroom remains.
+*   **Dynamic Capping:** One-click toggles to drop power limits (e.g., capping the GPUs during 10+ hour training sessions). This ensures total system draw stays within a "Safe Zone" (~600-700W), providing ample headroom for transient spikes and protecting both the PSU and the local electrical infrastructure.
+  
 # Dead Simple Power & Temp Monitor v2.5
 
 Simple system telemetry suite for Arduino Mega/Uno and Windows. This project provides a real-time hardware dashboard on a 3.5" TFT Shield and a desktop control utility for managing GPU power limits.
@@ -19,19 +33,6 @@ The system follows a **Producer-Dual Consumer** model with an integrated **Contr
 3.  **Consumer A (Arduino):** Displays a high-density landscape dashboard. Features a **Touch Toggle** to switch between "All Metrics" and a "Big Font Focus Mode".
 4.  **Consumer B (Python GUI):** A dark-themed desktop monitor that mirrors the Arduino and provides buttons to dynamically adjust RTX 5080 and RTX 3090 power limits via batch scripts.
 
-## ⚠️ Safety & Power Management (Dual GPU Context)
-
-Running a dual GPU setup with a **RTX 3090** and **RTX 5080** on a standard **1000W PSU** presents significant electrical challenges, particularly during long-running Machine Learning tasks (LoRA training, LLM inference).
-
-### The Challenge
-1.  **Transient Power Spikes:** High-end GPUs are notorious for "micro-spikes" (millisecond-duration transients) that can exceed their rated TDP significantly. Combined, these spikes can overwhelm a 1000W PSU's OCP (Over-Current Protection), leading to sudden system shutdowns or hardware stress.
-2.  **Infrastructure Limits (India):** In many Indian residential settings, standard power sockets are rated for **6A**. At 230V, while the theoretical limit is ~1380W, sustained high-wattage draw (especially on shared circuits with aging wiring) risks overheating sockets or tripping breakers. 
-3.  **Economic Constraints:** Upgrading to high-tier 1200W-1600W PSUs involves exponentially rising costs. Additionally, many of these PSUs require 16A industrial-style sockets, which necessitates expensive electrical modifications to the room.
-
-### The Solution
-This project provides a software-controlled safety layer:
-*   **Active Monitoring:** Real-time visibility into "Actual vs Limit" wattage on both the Arduino and the PC GUI allows you to see exactly how much headroom remains.
-*   **Dynamic Capping:** One-click toggles to drop power limits (e.g., capping the GPUs during 10+ hour training sessions). This ensures total system draw stays within a "Safe Zone" (~600-700W), providing ample headroom for transient spikes and protecting both the PSU and the local electrical infrastructure.
 
 ## 📊 Data Flow & Protocol
 
