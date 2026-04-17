@@ -1,6 +1,6 @@
-# Ultimate Power & Temp Monitor v2.5
+# Dead Simple Power & Temp Monitor v2.5
 
-A professional system telemetry suite for Arduino Mega/Uno and Windows. This project provides a real-time hardware dashboard on a 3.5" TFT Shield and a desktop control utility for managing GPU power limits.
+Simple system telemetry suite for Arduino Mega/Uno and Windows. This project provides a real-time hardware dashboard on a 3.5" TFT Shield and a desktop control utility for managing GPU power limits.
 
 ## 🖼 Visuals
 
