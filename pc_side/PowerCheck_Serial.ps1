@@ -1,17 +1,14 @@
-# Ultimate Power & Temp Monitor v5.2 - Serial Edition (Dual GPU)
+# Ultimate Power & Temp Monitor v5.3 - Serial Edition (Dual GPU + Limits)
 $ErrorActionPreference = "SilentlyContinue"
 
 # --- SERIAL CONFIG ---
-$portName = "COM3" # CHANGE THIS to your Arduino COM port
+$portName = "COM3" 
 $baudRate = 115200
 
 try {
     $port = New-Object System.IO.Ports.SerialPort $portName, $baudRate
     $port.Open()
-    Write-Host "Connected to Arduino on $portName" -ForegroundColor Green
-} catch {
-    Write-Host "Failed to open $portName. Check if Arduino is connected." -ForegroundColor Red
-}
+} catch { }
 
 # 1. Config
 $cpuTdp = 120.0 
@@ -22,21 +19,25 @@ $nvismi = "C:\Windows\System32\nvidia-smi.exe"
 while($true) {
     # --- GPU DATA ---
     $gpuMetrics = @()
-    $gpuOut = cmd /c "`"$nvismi`" --query-gpu=power.draw,temperature.gpu --format=csv,noheader,nounits 2>&1"
+    # Added power.limit to query
+    $gpuOut = cmd /c "`"$nvismi`" --query-gpu=power.draw,temperature.gpu,power.limit --format=csv,noheader,nounits 2>&1"
     foreach ($line in $gpuOut) {
-        if ($line -match "(\d+\.\d+),\s*(\d+)") {
+        if ($line -match "(\d+\.\d+),\s*(\d+),\s*(\d+\.\d+)") {
             $gpuMetrics += [PSCustomObject]@{
                 Power = [double]$matches[1]
                 Temp  = [int]$matches[2]
+                Limit = [double]$matches[3]
             }
         }
     }
 
-    # Ensure we have at least 2 entries for the string (even if 0)
     $g1P = if ($gpuMetrics.Count -gt 0) { $gpuMetrics[0].Power } else { 0.0 }
     $g1T = if ($gpuMetrics.Count -gt 0) { $gpuMetrics[0].Temp } else { 0 }
+    $g1L = if ($gpuMetrics.Count -gt 0) { $gpuMetrics[0].Limit } else { 0.0 }
+    
     $g2P = if ($gpuMetrics.Count -gt 1) { $gpuMetrics[1].Power } else { 0.0 }
     $g2T = if ($gpuMetrics.Count -gt 1) { $gpuMetrics[1].Temp } else { 0 }
+    $g2L = if ($gpuMetrics.Count -gt 1) { $gpuMetrics[1].Limit } else { 0.0 }
 
     # --- CPU DATA ---
     $cpuUsage = 0
@@ -51,23 +52,29 @@ while($true) {
     $gpuTotalPwr = $g1P + $g2P
     $totalSystem = $gpuTotalPwr + $cpuPower + $moboEstimate
 
-    # --- SEND TO ARDUINO ---
-    # Format: Usage,CpuPwr,CpuTemp,Gpu1Pwr,Gpu1Temp,Gpu2Pwr,Gpu2Temp,SysPwr (8 values)
+    # --- SEND TO ARDUINO & GUI ---
+    # New Format: Usage,CpuPwr,CpuTemp,G1P,G1T,G1L,G2P,G2T,G2L,SysPwr (10 values)
+    $dataString = "{0},{1:N1},{2:N1},{3:N1},{4},{5:N1},{6:N1},{7},{8:N1},{9:N1}" -f $cpuUsage, $cpuPower, $cpuTemp, $g1P, $g1T, $g1L, $g2P, $g2T, $g2L, $totalSystem
+    
     if ($port -and $port.IsOpen) {
-        $dataString = "{0},{1:N1},{2:N1},{3:N1},{4},{5:N1},{6},{7:N1}" -f $cpuUsage, $cpuPower, $cpuTemp, $g1P, $g1T, $g2P, $g2T, $totalSystem
         $port.WriteLine($dataString)
     }
 
-    # --- LOCAL DISPLAY ---
+    # UDP BROADCAST FOR GUI
+    try {
+        $udpClient = New-Object System.Net.Sockets.UdpClient
+        $byteData = [System.Text.Encoding]::ASCII.GetBytes($dataString)
+        $null = $udpClient.Send($byteData, $byteData.Length, "127.0.0.1", 9999)
+        $udpClient.Close()
+    } catch {}
+
     Clear-Host
-    Write-Host "Sending to Arduino: $dataString" -ForegroundColor Gray
-    Write-Host "CPU: $cpuUsage% | $cpuPower W | $cpuTemp C" -ForegroundColor Cyan
-    Write-Host "G1: $g1P W | $g1T C" -ForegroundColor Green
-    Write-Host "G2: $g2P W | $g2T C" -ForegroundColor Green
-    Write-Host "SYS: $totalSystem W" -ForegroundColor White
+    Write-Host "Monitoring Active... (Broadcasting to GUI)" -ForegroundColor Gray
+    Write-Host "CPU: $cpuUsage% | $cpuPower W"
+    Write-Host "G1: $g1P W / $g1L W | $g1T C"
+    Write-Host "G2: $g2P W / $g2L W | $g2T C"
+    Write-Host "SYS: $totalSystem W"
 
     Start-Sleep -Seconds $interval
 }
-
-# Cleanup on exit
 if ($port) { $port.Close() }
