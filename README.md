@@ -2,6 +2,12 @@
 
 A professional system telemetry suite for Arduino Mega/Uno and Windows. This project provides a real-time hardware dashboard on a 3.5" TFT Shield and a desktop control utility for managing GPU power limits.
 
+## 🖼 Visuals
+
+| PC Control Panel | Arduino Hardware Dashboard |
+| :---: | :---: |
+| ![PC GUI](screenshots/IMG_2675.JPEG) | ![Arduino Dashboard](screenshots/IMG_2676.JPEG) |
+
 ## 🏗 Architecture & Summary
 
 The system follows a **Producer-Dual Consumer** model with an integrated **Control Feedback** loop:

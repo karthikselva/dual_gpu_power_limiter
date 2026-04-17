@@ -70,6 +70,12 @@ class PowerControlGUI:
 
         self.update_metrics()
 
+        # --- AUTO-LAUNCH ACTIONS ---
+        # 1. Set 3090 to Low Power (225W)
+        self.run_bat("3090_lower_power_limit.bat")
+        # 2. Start Telemetry Service
+        self.start_telemetry()
+
     def create_metric_row(self, parent, label, default, row):
         tk.Label(parent, text=label, bg="#1a1a1a", fg="#aaa", font=self.label_font).grid(row=row, column=0, sticky="w")
         lbl = tk.Label(parent, text=default, bg="#1a1a1a", fg="white", font=self.val_font)
