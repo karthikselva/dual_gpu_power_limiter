@@ -27,6 +27,7 @@ Simple system telemetry suite for Arduino Mega/Uno and Windows. This project pro
 
 | Arduino Hardware Dashboard | PC Control Panel |
 | :---: | :---: |
+| ![PC GUI](screenshots/IMG_2677.JPEG) | ![Arduino Dashboard](screenshots/snap_ui.png) |
 | ![PC GUI](screenshots/IMG_2675.JPEG) | ![Arduino Dashboard](screenshots/IMG_2676.JPEG) |
 
 
