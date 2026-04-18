@@ -86,7 +86,7 @@ class PowerControlGUI:
         self.g1_temp_lbl = self.create_metric_row(g1_frame, "Temp:", "0°C", 1)
         btn_g1 = tk.Frame(g1_frame, bg="#1a1a1a")
         btn_g1.grid(row=2, column=0, columnspan=2, pady=10)
-        tk.Button(btn_g1, text="MAX (360W)", command=lambda: self.run_bat("5080_max_power_limit.bat"), bg="#27ae60", fg="white", width=12).pack(side="left", padx=2)
+        tk.Button(btn_g1, text="MAX (320W)", command=lambda: self.run_bat("5080_max_power_limit.bat"), bg="#27ae60", fg="white", width=12).pack(side="left", padx=2)
         tk.Button(btn_g1, text="LOW (300W)", command=lambda: self.run_bat("5080_lower_power_limit.bat"), bg="#d35400", fg="white", width=12).pack(side="left", padx=2)
 
         # --- GPU 2 SECTION (3090) ---
@@ -96,7 +96,7 @@ class PowerControlGUI:
         self.g2_temp_lbl = self.create_metric_row(g2_frame, "Temp:", "0°C", 1)
         btn_g2 = tk.Frame(g2_frame, bg="#1a1a1a")
         btn_g2.grid(row=2, column=0, columnspan=2, pady=10)
-        tk.Button(btn_g2, text="MAX (350W)", command=lambda: self.run_bat("3090_max_power_limit.bat"), bg="#2980b9", fg="white", width=12).pack(side="left", padx=2)
+        tk.Button(btn_g2, text="MAX (250W)", command=lambda: self.run_bat("3090_max_power_limit.bat"), bg="#2980b9", fg="white", width=12).pack(side="left", padx=2)
         tk.Button(btn_g2, text="LOW (225W)", command=lambda: self.run_bat("3090_lower_power_limit.bat"), bg="#d35400", fg="white", width=12).pack(side="left", padx=2)
 
         # --- SYSTEM TOTAL ---
@@ -155,7 +155,8 @@ class PowerControlGUI:
 
         self.update_metrics()
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
-        self.run_bat("3090_lower_power_limit.bat")
+        self.run_bat("5080_max_power_limit.bat")
+        self.run_bat("3090_max_power_limit.bat")
         self.start_telemetry()
 
     def create_metric_row(self, parent, label, default, row):

@@ -17,7 +17,7 @@ Running a dual GPU setup with a **RTX 3090** and **RTX 5080** on a standard **10
 ### The Solution
 This project provides a software-controlled safety layer:
 *   **Active Monitoring:** Real-time visibility into "Actual vs Limit" wattage on both the Arduino and the PC GUI allows you to see exactly how much headroom remains.
-*   **Dynamic Capping:** One-click toggles to drop power limits (e.g., capping the GPUs during 10+ hour training sessions). This ensures total system draw stays within a "Safe Zone" (~600-700W), providing ample headroom for transient spikes and protecting both the PSU and the local electrical infrastructure.
+*   **Dynamic Capping:** One-click toggles to adjust power limits. The app defaults to **MAX performance (320W for 5080, 250W for 3090)** on startup to ensure a consistent performance baseline, with "LOW" toggles available for long-running thermal-conscious sessions.
 *   **Visual Alerts (WLED):** Integration with WLED-enabled devices provides ambient room lighting that changes color based on total system power draw:
     *   **Green:** < 400W (Safe/Idle)
     *   **Yellow:** 400W - 600W (High Load)
