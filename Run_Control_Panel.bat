@@ -11,6 +11,8 @@ if %errorlevel% neq 0 (
 )
 
 :: --- Launch GUI ---
+echo Ensuring dependencies are installed...
+pip install requests zeroconf --quiet
 echo Starting GPU ^& Telemetry Control Center...
 cd pc_side
 python.exe control_gui.py

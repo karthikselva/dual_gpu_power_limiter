@@ -18,10 +18,14 @@ Running a dual GPU setup with a **RTX 3090** and **RTX 5080** on a standard **10
 This project provides a software-controlled safety layer:
 *   **Active Monitoring:** Real-time visibility into "Actual vs Limit" wattage on both the Arduino and the PC GUI allows you to see exactly how much headroom remains.
 *   **Dynamic Capping:** One-click toggles to drop power limits (e.g., capping the GPUs during 10+ hour training sessions). This ensures total system draw stays within a "Safe Zone" (~600-700W), providing ample headroom for transient spikes and protecting both the PSU and the local electrical infrastructure.
+*   **Visual Alerts (WLED):** Integration with WLED-enabled devices provides ambient room lighting that changes color based on total system power draw:
+    *   **Green:** < 400W (Safe/Idle)
+    *   **Yellow:** 400W - 600W (High Load)
+    *   **Red:** > 600W (Critical/Peak Zone)
   
-# Dead Simple Power & Temp Monitor v2.5
+# Dead Simple Power & Temp Monitor v2.6
 
-Simple system telemetry suite for Arduino Mega/Uno and Windows. This project provides a real-time hardware dashboard on a 3.5" TFT Shield and a desktop control utility for managing GPU power limits.
+Simple system telemetry suite for Arduino Mega/Uno and Windows. This project provides a real-time hardware dashboard on a 3.5" TFT Shield and a desktop control utility for managing GPU power limits and system stability testing.
 
 ## 🖼 Visuals
 
@@ -94,15 +98,18 @@ The system uses a **15-value** floating-point string:
 
 ## 🖥 Features
 
+### Python GUI & Stability Testing
+*   **Live Mirror:** Real-time data from the PowerShell service.
+*   **Limit Monitoring:** Shows `Actual Watts / Limit Watts` for both GPUs.
+*   **Vulkan Memtest:** Quick access to launch `memtest_vulkan.exe` in a dedicated console for GPU memory stress testing.
+*   **Silverbench Launch:** One-click button to open Silverbench (browser-based multi-core benchmark) in Microsoft Edge.
+*   **Ambient Sync:** Automatically discovers WLED devices via Zeroconf and syncs room lighting to your PC's power consumption.
+*   **Background Operation:** The PowerShell window is hidden automatically when started.
+
 ### Arduino Dashboard
 *   **Standard View:** Parallel columns for CPU and Dual GPU live data + Peak tracking.
 *   **Focus View:** Massive font display of Total System Watts and All-time Peak.
 *   **Heartbeat:** Green LED in the top right blinks on every successful packet.
-
-### Python GUI
-*   **Live Mirror:** Real-time data from the PowerShell service.
-*   **Limit Monitoring:** Shows `Actual Watts / Limit Watts` for both GPUs.
-*   **Background Operation:** The PowerShell window is hidden automatically when started.
 
 ## 📂 Project Structure
 ```text
