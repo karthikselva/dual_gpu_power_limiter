@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "author": "Gemini CLI",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "wokwi-esp32-devkit-v1", "id": "esp32", "top": 0, "left": 0, "attrs": {} },
+    {
+      "type": "wokwi-epaper-2in9",
+      "id": "eink",
+      "top": -200,
+      "left": 100,
+      "attrs": {}
+    },
+    { "type": "wokwi-led", "id": "led", "top": 100, "left": 200, "attrs": { "color": "green" } }
+  ],
+  "connections": [
+    [ "esp32:GND.1", "eink:GND", "black", [ "v0" ] ],
+    [ "esp32:3V3", "eink:VCC", "red", [ "v0" ] ],
+    
+    [ "esp32:18", "eink:CLK", "orange", [ "v0" ] ],
+    [ "esp32:23", "eink:DIN", "blue", [ "v0" ] ],
+    [ "esp32:9", "eink:CS", "yellow", [ "v0" ] ],
+    [ "esp32:15", "eink:DC", "green", [ "v0" ] ],
+    [ "esp32:0", "eink:RST", "gray", [ "v0" ] ],
+    [ "esp32:4", "eink:BUSY", "white", [ "v0" ] ],
+
+    [ "esp32:10", "led:A", "green", [ "v0" ] ],
+    [ "esp32:GND.2", "led:C", "black", [ "v0" ] ]
+  ],
+  "dependencies": {}
+}

@@ -30,6 +30,10 @@ Simple system telemetry suite for Arduino Mega/Uno and Windows. This project pro
 | ![PC GUI](screenshots/IMG_2677.JPEG) | ![Arduino Dashboard](screenshots/snap_ui.png) |
 | ![PC GUI](screenshots/IMG_2675.JPEG) | ![Arduino Dashboard](screenshots/IMG_2676.JPEG) |
 
+| M5 Core Ink Wireless Dashboard |
+| :---: |
+| ![Core Ink](screenshots/core_ink.JPEG) |
+
 
 ## 🏗 Architecture & Summary
 
@@ -58,24 +62,29 @@ PowerCheck Service  ---( Serial USB )----------->  Dashboard UI
 ```
 
 ### CSV Protocol Specification
-The system uses a **10-value** floating-point string:
-`usage, cpuPwr, cpuTemp, g1Pwr, g1Temp, g1Limit, g2Pwr, g2Temp, g2Limit, sysPwr`
+The system uses a **15-value** floating-point string:
+`usage, cpuPwr, cpuTemp, g1Pwr, g1Temp, g1Limit, g2Pwr, g2Temp, g2Limit, sysPwr, peakCpu, peakG1, peakG2, peakSys, time`
 
 | Field | Description | Field | Description |
 | :--- | :--- | :--- | :--- |
-| `usage` | CPU Load % | `g1Limit` | RTX 5080 Power Limit (W) |
-| `cpuPwr` | CPU Watts | `g2Pwr` | RTX 3090 Watts |
-| `g1Pwr` | RTX 5080 Watts | `g2Temp` | RTX 3090 Temp (°C) |
-| `g1Temp`| RTX 5080 Temp (°C) | `g2Limit` | RTX 3090 Power Limit (W) |
-| `sysPwr`| Total System Draw | `cpuTemp` | (Reserved) |
+| `usage` | CPU Load % | `g2Temp` | RTX 3090 Temp (°C) |
+| `cpuPwr` | CPU Watts | `g2Limit` | RTX 3090 Power Limit (W) |
+| `cpuTemp`| (Reserved) | `sysPwr` | Total System Draw |
+| `g1Pwr` | RTX 5080 Watts | `peakCpu` | Session Peak CPU (W) |
+| `g1Temp` | RTX 5080 Temp (°C) | `peakG1` | Session Peak G1 (W) |
+| `g1Limit`| RTX 5080 Power Limit (W)| `peakG2` | Session Peak G2 (W) |
+| `g2Pwr` | RTX 3090 Watts | `peakSys` | Session Peak System (W) |
+| `time` | Sync Time (HH:mm) | | |
 
 ## 🚀 How to Run
 
 ### 1. Arduino Setup
 *   Open the folder in VS Code with **PlatformIO** installed.
-*   Plug in your Arduino Mega/Uno with the 3.5" TFT Shield.
-*   Click **Upload** (Right Arrow icon).
-*   **Touch Function:** Tap the screen anytime to toggle "Focus Mode".
+*   **For Wired Display:** Select the `mega2560` or `uno` environment and click **Upload**.
+*   **For Wireless Core Ink:** 
+    *   Open `include/secrets.h` and enter your WiFi SSID and Password.
+    *   Select the `m5stack-coreink` environment and click **Upload**.
+*   **Touch Function (TFT):** Tap the screen anytime to toggle "Focus Mode".
 
 ### 2. PC Control Panel
 *   Locate `Run_Control_Panel.bat` in the project root.
@@ -99,7 +108,9 @@ The system uses a **10-value** floating-point string:
 ```text
 ├── Run_Control_Panel.bat    # Entry point for PC software
 ├── platformio.ini           # Arduino build config
-├── src/main.cpp             # Arduino Display & Touch logic
+├── src/
+│   ├── arduino_mega/        # Arduino Mega/Uno Display & Touch logic
+│   └── m5_core_ink/         # M5 Core Ink Wireless Display logic
 ├── include/telemetry.h      # Shared C++ parsing logic
 └── pc_side/
     ├── control_gui.py       # Python Monitoring App

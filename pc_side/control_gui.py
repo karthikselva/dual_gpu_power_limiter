@@ -57,6 +57,8 @@ class PowerControlGUI:
         tk.Label(sys_frame, text="SYSTEM TOTAL:", bg="#1a1a1a", fg="#f1c40f", font=self.title_font).pack(side="left")
         self.sys_pwr_lbl = tk.Label(sys_frame, text="0.0W", bg="#1a1a1a", fg="#f1c40f", font=("Consolas", 20, "bold"))
         self.sys_pwr_lbl.pack(side="right")
+        self.sys_peak_lbl = tk.Label(root, text="SESSION PEAK: 0.0W", bg="#1a1a1a", fg="#e67e22", font=self.label_font)
+        self.sys_peak_lbl.pack()
 
         # --- SERVICE CONTROLS ---
         ctl_frame = tk.Frame(root, bg="#1a1a1a", pady=10)
@@ -85,11 +87,20 @@ class PowerControlGUI:
 
     def update_metrics(self):
         try:
-            data, _ = self.udp_sock.recvfrom(1024)
+            data, _ = self.udp_sock.recvfrom(2048)
             msg = data.decode("ascii")
             vals = msg.split(",")
-            # New format: usage[0], cpuP[1], cpuT[2], g1P[3], g1T[4], g1L[5], g2P[6], g2T[7], g2L[8], sysP[9]
-            if len(vals) == 10:
+            # New format: usage[0], cpuP[1], cpuT[2], g1P[3], g1T[4], g1L[5], g2P[6], g2T[7], g2L[8], sysP[9], peakCpu[10], peakG1[11], peakG2[12], peakSys[13], time[14]
+            if len(vals) >= 15:
+                self.cpu_usage_lbl.config(text=f"{int(float(vals[0]))}%")
+                self.cpu_pwr_lbl.config(text=f"{vals[1]}W (Peak: {vals[10]}W)")
+                self.g1_pwr_lbl.config(text=f"{vals[3]} / {vals[5]}W")
+                self.g1_temp_lbl.config(text=f"{vals[4]}°C")
+                self.g2_pwr_lbl.config(text=f"{vals[6]} / {vals[8]}W")
+                self.g2_temp_lbl.config(text=f"{vals[7]}°C")
+                self.sys_pwr_lbl.config(text=f"{vals[9]}W")
+                self.sys_peak_lbl.config(text=f"SESSION PEAK: {vals[13]}W | SYNC: {vals[14]}")
+            elif len(vals) == 10:
                 self.cpu_usage_lbl.config(text=f"{int(float(vals[0]))}%")
                 self.cpu_pwr_lbl.config(text=f"{vals[1]}W")
                 self.g1_pwr_lbl.config(text=f"{vals[3]} / {vals[5]}W")
@@ -133,6 +144,7 @@ class PowerControlGUI:
             self.g1_pwr_lbl.config(text="0.0 / 0.0W")
             self.g2_pwr_lbl.config(text="0.0 / 0.0W")
             self.sys_pwr_lbl.config(text="0.0W")
+            self.sys_peak_lbl.config(text="SESSION PEAK: 0.0W")
 
 if __name__ == "__main__":
     root = tk.Tk()

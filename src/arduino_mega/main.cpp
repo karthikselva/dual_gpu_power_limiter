@@ -26,14 +26,6 @@ TouchScreen ts = TouchScreen(XP, YP, XM, YM, 300);
 #define WHITE   0xFFFF
 #define ORANGE  0xFD20
 
-// Peak Tracking
-struct Peaks {
-    int cpuW;
-    int gpu1W, gpu1T;
-    int gpu2W, gpu2T;
-    int sysW;
-} peaks = {0, 0, 0, 0, 0, 0};
-
 bool ui_drawn = false;
 bool rx_blink = false;
 bool focus_mode = false;
@@ -52,51 +44,45 @@ void drawStaticUI() {
     tft.setTextColor(YELLOW); tft.setCursor(15, 230); tft.print("SYSTEM TOTAL / PEAK");
 }
 
-void updateCPUColumn(float pwr, float usage) {
-    if (pwr > peaks.cpuW) peaks.cpuW = (int)pwr;
+void updateCPUColumn(const Telemetry& t) {
     tft.setTextColor(WHITE, BLACK); tft.setTextSize(5);
-    tft.setCursor(20, 50);  tft.print(String((int)pwr) + "W  ");
+    tft.setCursor(20, 50);  tft.print(String((int)t.cpuPower) + "W  ");
     tft.setTextSize(2);
     tft.setTextColor(CYAN, BLACK);
-    tft.setCursor(20, 100); tft.print("LOAD: " + String((int)usage) + "%  ");
+    tft.setCursor(20, 100); tft.print("LOAD: " + String((int)t.cpuUsage) + "%  ");
     tft.drawFastHLine(10, 125, 220, GRAY);
     tft.setTextColor(WHITE, BLACK);
-    tft.setCursor(20, 135); tft.print("CPU PEAK: " + String(peaks.cpuW) + "W ");
+    tft.setCursor(20, 135); tft.print("CPU PEAK: " + String((int)t.peakCpuPwr) + "W ");
     tft.setTextColor(GREEN, BLACK);
-    tft.setCursor(20, 160); tft.print("5080 PEAK:" + String(peaks.gpu1W) + "W ");
-    tft.setCursor(20, 185); tft.print("3090 PEAK:" + String(peaks.gpu2W) + "W ");
+    tft.setCursor(20, 160); tft.print("5080 PEAK:" + String((int)t.peakG1Pwr) + "W ");
+    tft.setCursor(20, 185); tft.print("3090 PEAK:" + String((int)t.peakG2Pwr) + "W ");
 }
 
-void updateGPU(int id, float pwr, float temp) {
+void updateGPU(int id, const Telemetry& t) {
     int yOff = (id == 1) ? 0 : 92;
     const char* name = (id == 1) ? "RTX 5080" : "RTX 3090";
-    if (id == 1) {
-        if (pwr > peaks.gpu1W) peaks.gpu1W = (int)pwr;
-        if (temp > peaks.gpu1T) peaks.gpu1T = (int)temp;
-    } else {
-        if (pwr > peaks.gpu2W) peaks.gpu2W = (int)pwr;
-        if (temp > peaks.gpu2T) peaks.gpu2T = (int)temp;
-    }
+    float pwr = (id == 1) ? t.gpu1Power : t.gpu2Power;
+    float temp = (id == 1) ? t.gpu1Temp : t.gpu2Temp;
+
     tft.setTextSize(2); tft.setTextColor(GREEN, BLACK); tft.setCursor(250, 45 + yOff); tft.print(name);
     tft.setTextSize(3); tft.setTextColor(WHITE, BLACK); tft.setCursor(250, 65 + yOff); tft.print(String((int)pwr) + "W ");
     tft.setTextColor(RED, BLACK); tft.setCursor(250, 95 + yOff); tft.print(String((int)temp) + "C ");
-    tft.setTextSize(2); tft.setCursor(350, 103 + yOff); tft.print("M:" + String((id == 1) ? peaks.gpu1T : peaks.gpu2T) + "C");
+    tft.setTextSize(2); tft.setCursor(350, 103 + yOff); 
 }
 
-void updateSystem(float pwr) {
-    if (pwr > peaks.sysW) peaks.sysW = (int)pwr;
-    tft.setTextSize(5); tft.setCursor(20, 260); tft.setTextColor(YELLOW, BLACK); tft.print(String((int)pwr) + "W");
+void updateSystem(const Telemetry& t) {
+    tft.setTextSize(5); tft.setCursor(20, 260); tft.setTextColor(YELLOW, BLACK); tft.print(String((int)t.systemPower) + "W");
     tft.setTextColor(GRAY, BLACK); tft.print(" / ");
-    tft.setTextColor(ORANGE, BLACK); tft.print(String(peaks.sysW) + "W ");
+    tft.setTextColor(ORANGE, BLACK); tft.print(String((int)t.peakSysPwr) + "W ");
 }
 
-void drawFocusUI(float pwr) {
+void drawFocusUI(const Telemetry& t) {
     if (!ui_drawn) { tft.fillScreen(BLACK); ui_drawn = true; }
     tft.setTextSize(3); tft.setTextColor(YELLOW, BLACK); tft.setCursor(40, 40); tft.print("SYSTEM TOTAL");
-    tft.setTextSize(9); tft.setCursor(40, 80); tft.print(String((int)pwr) + "W   ");
+    tft.setTextSize(9); tft.setCursor(40, 80); tft.print(String((int)t.systemPower) + "W   ");
     tft.drawFastHLine(20, 160, 440, GRAY);
     tft.setTextSize(3); tft.setTextColor(ORANGE, BLACK); tft.setCursor(40, 190); tft.print("SYSTEM PEAK");
-    tft.setTextSize(9); tft.setCursor(40, 230); tft.print(String(peaks.sysW) + "W   ");
+    tft.setTextSize(9); tft.setCursor(40, 230); tft.print(String((int)t.peakSysPwr) + "W   ");
 }
 
 void checkTouch() {
@@ -117,7 +103,7 @@ void setup() {
     uint16_t ID = tft.readID();
     if (ID == 0x0000 || ID == 0xFFFF || ID == 0xD3D3) ID = 0x9486; 
     tft.begin(ID);
-    tft.setRotation(1);
+    tft.setRotation(3);
     tft.fillScreen(BLACK);
     tft.setTextColor(WHITE); tft.setTextSize(2);
     tft.setCursor(60, 140); tft.print("TOUCH ENABLED MONITOR v2.5");
@@ -129,24 +115,16 @@ void loop() {
         String data = Serial.readStringUntil('\n');
         Telemetry t;
         if (parseTelemetry(data.c_str(), t)) {
-            // Update peaks regardless of mode
-            if (t.cpuPower > peaks.cpuW) peaks.cpuW = (int)t.cpuPower;
-            if (t.gpu1Power > peaks.gpu1W) peaks.gpu1W = (int)t.gpu1Power;
-            if (t.gpu2Power > peaks.gpu2W) peaks.gpu2W = (int)t.gpu2Power;
-            if (t.systemPower > peaks.sysW) peaks.sysW = (int)t.systemPower;
-            if (t.gpu1Temp > peaks.gpu1T) peaks.gpu1T = (int)t.gpu1Temp;
-            if (t.gpu2Temp > peaks.gpu2T) peaks.gpu2T = (int)t.gpu2Temp;
-
             if (focus_mode) {
-                drawFocusUI(t.systemPower);
+                drawFocusUI(t);
             } else {
                 if (!ui_drawn) { drawStaticUI(); ui_drawn = true; }
                 rx_blink = !rx_blink;
                 tft.fillCircle(465, 18, 5, rx_blink ? GREEN : GRAY);
-                updateCPUColumn(t.cpuPower, t.cpuUsage);
-                updateGPU(1, t.gpu1Power, t.gpu1Temp);
-                updateGPU(2, t.gpu2Power, t.gpu2Temp);
-                updateSystem(t.systemPower);
+                updateCPUColumn(t);
+                updateGPU(1, t);
+                updateGPU(2, t);
+                updateSystem(t);
             }
         }
     }
