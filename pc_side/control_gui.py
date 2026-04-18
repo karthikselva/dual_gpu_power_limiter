@@ -9,8 +9,9 @@ import json
 from zeroconf import ServiceBrowser, Zeroconf
 
 class WLEDDiscovery:
-    def __init__(self):
-        self.wled_ips = set()
+    def __init__(self, update_callback=None):
+        self.wled_devices = {} # {ip: name}
+        self.update_callback = update_callback
         self.zeroconf = Zeroconf()
         self.browser = ServiceBrowser(self.zeroconf, "_http._tcp.local.", self)
 
@@ -22,7 +23,11 @@ class WLEDDiscovery:
         if info and "wled" in name.lower():
             for addr in info.addresses:
                 ip = socket.inet_ntoa(addr)
-                self.wled_ips.add(ip)
+                clean_name = name.split(".")[0]
+                if ip not in self.wled_devices:
+                    self.wled_devices[ip] = clean_name
+                    if self.update_callback:
+                        self.update_callback()
 
     def update_service(self, zeroconf, type, name):
         pass
@@ -31,16 +36,24 @@ class PowerControlGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("System Control & Monitor")
-        self.root.geometry("600x850") # Adjusted size
+        self.root.geometry("600x920") # Increased height for device list
         self.root.configure(bg="#1a1a1a")
         
         self.telemetry_proc = None
         self.base_path = os.path.dirname(os.path.abspath(__file__))
         
         # WLED State
+        self.config_path = os.path.join(self.base_path, "wled_config.json")
         self.wled_enabled = tk.BooleanVar(value=True)
-        self.wled_discovery = WLEDDiscovery()
-        self.last_wled_color = None
+        self.wled_purple_threshold = tk.IntVar(value=400)
+        self.wled_red_threshold = tk.IntVar(value=600)
+        self.wled_extreme_threshold = tk.IntVar(value=800)
+        self.wled_flash_enabled = tk.BooleanVar(value=True)
+        self.load_config()
+        
+        self.wled_discovery = WLEDDiscovery(update_callback=lambda: self.root.after(0, self.refresh_wled_list))
+        self.selected_wleds = {} # {ip: BooleanVar}
+        self.last_wled_state = None # Stores (r, g, b, fx)
         
         # UDP Setup for monitoring
         self.udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -89,20 +102,46 @@ class PowerControlGUI:
         # --- SYSTEM TOTAL ---
         sys_frame = tk.Frame(root, bg="#1a1a1a")
         sys_frame.pack(fill="x", padx=15, pady=10)
-        tk.Label(sys_frame, text="SYSTEM TOTAL:", bg="#1a1a1a", fg="#f1c40f", font=self.title_font).pack(side="left")
+        tk.Label(sys_frame, text="PSU WATTAGE (EST):", bg="#1a1a1a", fg="#f1c40f", font=self.title_font).pack(side="left")
         self.sys_pwr_lbl = tk.Label(sys_frame, text="0.0W", bg="#1a1a1a", fg="#f1c40f", font=("Consolas", 20, "bold"))
         self.sys_pwr_lbl.pack(side="right")
-        self.sys_peak_lbl = tk.Label(root, text="SESSION PEAK: 0.0W", bg="#1a1a1a", fg="#e67e22", font=self.label_font)
+        self.sys_peak_lbl = tk.Label(root, text="SESSION PEAK PSU: 0.0W", bg="#1a1a1a", fg="#e67e22", font=self.label_font)
         self.sys_peak_lbl.pack()
 
         # --- WLED CONTROL SECTION ---
         wled_frame = tk.LabelFrame(root, text="AMBIENT WLED CONTROL", bg="#1a1a1a", fg="#9b59b6", font=self.title_font, padx=15, pady=10)
         wled_frame.pack(fill="x", padx=15, pady=5)
-        tk.Checkbutton(wled_frame, text="Enable Power-Reactive Lighting", variable=self.wled_enabled, 
+        
+        top_wled = tk.Frame(wled_frame, bg="#1a1a1a")
+        top_wled.pack(fill="x")
+        tk.Checkbutton(top_wled, text="Enable Power-Reactive Lighting", variable=self.wled_enabled, 
                        bg="#1a1a1a", fg="white", selectcolor="#333", activebackground="#1a1a1a", activeforeground="white",
                        font=self.label_font, command=self.toggle_wled).pack(side="left")
-        self.wled_count_lbl = tk.Label(wled_frame, text="Devices: 0", bg="#1a1a1a", fg="#aaa", font=self.label_font)
+        self.wled_count_lbl = tk.Label(top_wled, text="Devices: 0", bg="#1a1a1a", fg="#aaa", font=self.label_font)
         self.wled_count_lbl.pack(side="right")
+
+        cfg_wled = tk.Frame(wled_frame, bg="#1a1a1a", pady=5)
+        cfg_wled.pack(fill="x")
+        
+        tk.Label(cfg_wled, text="Purp(W):", bg="#1a1a1a", fg="#9b59b6", font=self.label_font).pack(side="left", padx=(0, 2))
+        tk.Entry(cfg_wled, textvariable=self.wled_purple_threshold, width=4, bg="#333", fg="white").pack(side="left", padx=(0, 10))
+        
+        tk.Label(cfg_wled, text="Red(W):", bg="#1a1a1a", fg="#e74c3c", font=self.label_font).pack(side="left", padx=(0, 2))
+        tk.Entry(cfg_wled, textvariable=self.wled_red_threshold, width=4, bg="#333", fg="white").pack(side="left", padx=(0, 10))
+
+        tk.Label(cfg_wled, text="Crit(W):", bg="#1a1a1a", fg="#ff0000", font=self.label_font).pack(side="left", padx=(0, 2))
+        tk.Entry(cfg_wled, textvariable=self.wled_extreme_threshold, width=4, bg="#333", fg="white").pack(side="left", padx=(0, 5))
+        tk.Checkbutton(cfg_wled, text="Flash", variable=self.wled_flash_enabled, bg="#1a1a1a", fg="white", 
+                       selectcolor="#333", font=self.label_font).pack(side="left")
+        
+        self.wled_list_frame = tk.Frame(wled_frame, bg="#222", pady=2)
+        self.wled_list_frame.pack(fill="x", pady=5)
+        tk.Label(self.wled_list_frame, text="Discovered Devices (Select to Sync):", bg="#222", fg="#888", font=("Segoe UI", 8)).pack(anchor="w", padx=5)
+        self.device_container = tk.Frame(self.wled_list_frame, bg="#222")
+        self.device_container.pack(fill="x")
+
+        tk.Button(wled_frame, text="💾 SAVE SETTINGS", command=self.save_config, 
+                  bg="#16a085", fg="white", font=("Segoe UI", 8, "bold")).pack(fill="x", pady=5)
 
         # --- SERVICE CONTROLS ---
         ctl_frame = tk.Frame(root, bg="#1a1a1a", pady=10)
@@ -142,18 +181,67 @@ class PowerControlGUI:
         except Exception as e:
             messagebox.showerror("Error", f"Failed to launch Silverbench: {e}")
 
-    def set_wled_color(self, ip, r, g, b):
+    def save_config(self):
+        config = {
+            "enabled": self.wled_enabled.get(),
+            "purple": self.wled_purple_threshold.get(),
+            "red": self.wled_red_threshold.get(),
+            "extreme": self.wled_extreme_threshold.get(),
+            "flash": self.wled_flash_enabled.get(),
+            "selected_ips": [ip for ip, var in self.selected_wleds.items() if var.get()]
+        }
+        try:
+            with open(self.config_path, "w") as f:
+                json.dump(config, f)
+            messagebox.showinfo("Success", "WLED settings saved successfully!")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to save config: {e}")
+
+    def load_config(self):
+        self.saved_ips = []
+        if os.path.exists(self.config_path):
+            try:
+                with open(self.config_path, "r") as f:
+                    config = json.load(f)
+                self.wled_enabled.set(config.get("enabled", True))
+                self.wled_purple_threshold.set(config.get("purple", 400))
+                self.wled_red_threshold.set(config.get("red", 600))
+                self.wled_extreme_threshold.set(config.get("extreme", 800))
+                self.wled_flash_enabled.set(config.get("flash", True))
+                self.saved_ips = config.get("selected_ips", [])
+            except:
+                pass
+
+    def refresh_wled_list(self):
+        # Clear existing
+        for widget in self.device_container.winfo_children():
+            widget.destroy()
+            
+        for ip, name in self.wled_discovery.wled_devices.items():
+            if ip not in self.selected_wleds:
+                # If we have saved IPs, only select if it's in the list. 
+                # Otherwise default to True (first time discovery)
+                is_selected = True if not self.saved_ips or ip in self.saved_ips else False
+                self.selected_wleds[ip] = tk.BooleanVar(value=is_selected)
+                
+            f = tk.Frame(self.device_container, bg="#222")
+            f.pack(fill="x", padx=10)
+            tk.Checkbutton(f, text=f"{name} ({ip})", variable=self.selected_wleds[ip],
+                           bg="#222", fg="#2ecc71", selectcolor="#333", activebackground="#222", 
+                           activeforeground="#2ecc71", font=("Segoe UI", 9)).pack(side="left")
+
+    def set_wled_state(self, ip, r, g, b, fx=0):
         url = f"http://{ip}/json/state"
-        payload = {"on": True, "bri": 255, "seg": [{"col": [[r, g, b]]}]}
+        payload = {"on": True, "bri": 255, "seg": [{"col": [[r, g, b]], "fx": fx, "sx": 255, "ix": 200}]}
         try:requests.post(url, json=payload, timeout=0.5)
         except:pass
 
     def toggle_wled(self):
-        if not self.wled_enabled.get(): self.last_wled_color = None
+        if not self.wled_enabled.get(): self.last_wled_state = None
 
     def update_metrics(self):
         try:
-            self.wled_count_lbl.config(text=f"Devices: {len(self.wled_discovery.wled_ips)}")
+            self.wled_count_lbl.config(text=f"Devices: {len(self.wled_discovery.wled_devices)}")
             data, _ = self.udp_sock.recvfrom(2048)
             msg = data.decode("ascii")
             vals = msg.split(",")
@@ -167,12 +255,29 @@ class PowerControlGUI:
                 self.g2_temp_lbl.config(text=f"{vals[7]}°C")
                 self.sys_pwr_lbl.config(text=f"{vals[9]}W")
                 self.sys_peak_lbl.config(text=f"SESSION PEAK: {vals[13]}W | SYNC: {vals[14]}")
+                
                 if self.wled_enabled.get():
-                    color = (255, 0, 0) if sys_p > 600 else (255, 255, 0) if sys_p >= 400 else (0, 255, 0)
-                    if color != self.last_wled_color:
-                        for ip in list(self.wled_discovery.wled_ips):
-                            threading.Thread(target=self.set_wled_color, args=(ip, *color), daemon=True).start()
-                        self.last_wled_color = color
+                    try:
+                        p_limit = self.wled_purple_threshold.get()
+                        r_limit = self.wled_red_threshold.get()
+                        e_limit = self.wled_extreme_threshold.get()
+                    except:
+                        p_limit, r_limit, e_limit = 400, 600, 800
+                        
+                    if sys_p > e_limit and self.wled_flash_enabled.get():
+                        new_state = (255, 0, 0, 1) # Red, Blink effect
+                    elif sys_p > r_limit:
+                        new_state = (255, 0, 0, 0) # Red, Static
+                    elif sys_p >= p_limit:
+                        new_state = (255, 0, 255, 0) # Purple, Static
+                    else:
+                        new_state = (0, 255, 0, 0) # Green, Static
+                        
+                    if new_state != self.last_wled_state:
+                        active_ips = [ip for ip, var in self.selected_wleds.items() if var.get()]
+                        for ip in active_ips:
+                            threading.Thread(target=self.set_wled_state, args=(ip, *new_state), daemon=True).start()
+                        self.last_wled_state = new_state
             elif len(vals) == 10:
                 self.cpu_usage_lbl.config(text=f"{int(float(vals[0]))}%")
                 self.cpu_pwr_lbl.config(text=f"{vals[1]}W")
