@@ -85,6 +85,8 @@ while($true) {
         $byteData = [System.Text.Encoding]::ASCII.GetBytes($dataString)
         # Send to local GUI
         $null = $udpClient.Send($byteData, $byteData.Length, "127.0.0.1", 9999)
+        # Send to local Web Client
+        $null = $udpClient.Send($byteData, $byteData.Length, "127.0.0.1", 9998)
         # Send to Network Broadcast for Core Ink
         $null = $udpClient.Send($byteData, $byteData.Length, "255.255.255.255", 9999)
         $udpClient.Close()

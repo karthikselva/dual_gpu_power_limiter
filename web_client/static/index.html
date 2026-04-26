@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>System Telemetry - Web Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Segoe+UI:wght@400;600;700&family=Consolas&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>SYSTEM TELEMETRY</h1>
+            <div id="status">
+                <span id="dot" class="red"></span>
+                <span id="sync-time">DISCONNECTED</span>
+            </div>
+        </header>
+
+        <main>
+            <!-- TOTAL SYSTEM POWER CARD -->
+            <section class="card full-width psu-card">
+                <h2>PSU WATTAGE (EST)</h2>
+                <div class="big-metric">
+                    <span id="sysPwr">0.0</span><span class="unit">W</span>
+                </div>
+                <div class="peak-info">SESSION PEAK: <span id="peakSys">0.0</span>W</div>
+            </section>
+
+            <div class="grid">
+                <!-- CPU SECTION -->
+                <section class="card cpu-card">
+                    <h3>CPU MONITOR (9950X3D)</h3>
+                    <div class="metric-row">
+                        <span class="label">Usage</span>
+                        <span class="value" id="usage">0%</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="label">Power</span>
+                        <span class="value" id="cpuPwr">0.0W</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="label">Peak</span>
+                        <span class="value small" id="peakCpu">0.0W</span>
+                    </div>
+                </section>
+
+                <!-- GPU 1 SECTION -->
+                <section class="card g1-card">
+                    <h3>RTX 5080 (Primary)</h3>
+                    <div class="metric-row">
+                        <span class="label">Power</span>
+                        <span class="value"><span id="g1Pwr">0.0</span> / <span id="g1Limit">0.0</span>W</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="label">Temp</span>
+                        <span class="value" id="g1Temp">0°C</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="label">Peak</span>
+                        <span class="value small" id="peakG1">0.0W</span>
+                    </div>
+                </section>
+
+                <!-- GPU 2 SECTION -->
+                <section class="card g2-card">
+                    <h3>RTX 3090 (Secondary)</h3>
+                    <div class="metric-row">
+                        <span class="label">Power</span>
+                        <span class="value"><span id="g2Pwr">0.0</span> / <span id="g2Limit">0.0</span>W</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="label">Temp</span>
+                        <span class="value" id="g2Temp">0°C</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="label">Peak</span>
+                        <span class="value small" id="peakG2">0.0W</span>
+                    </div>
+                </section>
+            </div>
+        </main>
+
+        <footer>
+            <div id="ip-address">Loading IP...</div>
+        </footer>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>

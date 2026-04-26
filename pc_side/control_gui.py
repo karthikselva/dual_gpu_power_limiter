@@ -36,11 +36,16 @@ class PowerControlGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("System Control & Monitor")
-        self.root.geometry("600x920") # Increased height for device list
+        self.root.geometry("600x1050") # Increased height for all sections
         self.root.configure(bg="#1a1a1a")
         
         self.telemetry_proc = None
+        self.telemetry_proc = None
+        self.web_server_proc = None
         self.base_path = os.path.dirname(os.path.abspath(__file__))
+        self.root_path = os.path.dirname(self.base_path)
+
+        self.root_path = os.path.dirname(self.base_path)
         
         # WLED State
         self.config_path = os.path.join(self.base_path, "wled_config.json")
@@ -143,6 +148,25 @@ class PowerControlGUI:
         tk.Button(wled_frame, text="💾 SAVE SETTINGS", command=self.save_config, 
                   bg="#16a085", fg="white", font=("Segoe UI", 8, "bold")).pack(fill="x", pady=5)
 
+        # --- WEB SERVER CONTROL SECTION ---
+        web_frame = tk.LabelFrame(root, text="WEB DASHBOARD SERVER", bg="#1a1a1a", fg="#00d2ff", font=self.title_font, padx=15, pady=10)
+        web_frame.pack(fill="x", padx=15, pady=5)
+        
+        self.web_status_label = tk.Label(web_frame, text="WEB SERVER: STOPPED", bg="#1a1a1a", fg="#95a5a6", font=self.label_font)
+        self.web_status_label.pack()
+        
+        self.web_url_entry = tk.Entry(web_frame, bg="#333", fg="#f1c40f", font=("Consolas", 10), justify="center", borderwidth=0)
+        self.web_url_entry.pack(fill="x", pady=5)
+        self.web_url_entry.insert(0, "http://localhost:8000")
+        self.web_url_entry.config(state="readonly")
+
+        btn_web = tk.Frame(web_frame, bg="#1a1a1a")
+        btn_web.pack(fill="x")
+        self.web_start_btn = tk.Button(btn_web, text="START WEB SERVER", command=self.start_web_server, bg="#27ae60", fg="white", font=self.label_font, width=15)
+        self.web_start_btn.pack(side="left", expand=True, padx=2)
+        self.web_stop_btn = tk.Button(btn_web, text="STOP WEB SERVER", command=self.stop_web_server, state="disabled", bg="#333", fg="white", font=self.label_font, width=15)
+        self.web_stop_btn.pack(side="left", expand=True, padx=2)
+
         # --- SERVICE CONTROLS ---
         ctl_frame = tk.Frame(root, bg="#1a1a1a", pady=10)
         ctl_frame.pack(fill="x", padx=15)
@@ -158,6 +182,42 @@ class PowerControlGUI:
         self.run_bat("5080_max_power_limit.bat")
         self.run_bat("3090_max_power_limit.bat")
         self.start_telemetry()
+        self.start_web_server()
+
+    def start_web_server(self):
+        server_path = os.path.join(self.root_path, "web_client", "server.py")
+        try:
+            # Get local IP for display
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(('10.255.255.255', 1))
+            ip = s.getsockname()[0]
+            s.close()
+            url = f"http://{ip}:8000"
+            self.web_url_entry.config(state="normal")
+            self.web_url_entry.delete(0, tk.END)
+            self.web_url_entry.insert(0, url)
+            self.web_url_entry.config(state="readonly")
+            
+            # Launch web server in hidden mode
+            self.web_server_proc = subprocess.Popen(
+                ["python", server_path],
+                creationflags=0x08000000 # CREATE_NO_WINDOW
+            )
+            self.web_status_label.config(text="WEB SERVER: RUNNING", fg="#2ecc71")
+            self.web_start_btn.config(state="disabled", bg="#333")
+            self.web_stop_btn.config(state="normal", bg="#e74c3c")
+        except:
+            self.web_status_label.config(text="WEB SERVER: FAILED", fg="#e74c3c")
+
+    def stop_web_server(self):
+        if self.web_server_proc:
+            try:
+                subprocess.run(["taskkill", "/F", "/T", "/PID", str(self.web_server_proc.pid)], capture_output=True)
+            except: pass
+            self.web_server_proc = None
+            self.web_status_label.config(text="WEB SERVER: STOPPED", fg="#95a5a6")
+            self.web_start_btn.config(state="normal", bg="#27ae60")
+            self.web_stop_btn.config(state="disabled", bg="#333")
 
     def create_metric_row(self, parent, label, default, row):
         tk.Label(parent, text=label, bg="#1a1a1a", fg="#aaa", font=self.label_font).grid(row=row, column=0, sticky="w")
@@ -308,6 +368,9 @@ class PowerControlGUI:
         except Exception as e:messagebox.showerror("Error", "Failed to start service")
 
     def stop_telemetry(self):
+        if self.web_server_proc:
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(self.web_server_proc.pid)])
+            self.web_server_proc = None
         if self.telemetry_proc:
             subprocess.run(["taskkill", "/F", "/T", "/PID", str(self.telemetry_proc.pid)])
             self.telemetry_proc = None

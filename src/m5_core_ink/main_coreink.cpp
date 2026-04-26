@@ -25,6 +25,8 @@ void setup() {
     M5.M5Ink.clear(); // Clear screen once at start
     delay(1000);
 
+    analogSetAttenuation(ADC_11db); // For battery reading on GPIO 35
+
     pinMode(LED_PIN, OUTPUT);
     digitalWrite(LED_PIN, HIGH); // LED is active low, HIGH = OFF
 
@@ -66,6 +68,17 @@ void drawTelemetry(const Telemetry& t) {
     // --- 1. SYSTEM TOTAL CELL (Top) ---
     InkPageSprite.drawRect(4, 4, 192, 65, 1);
     InkPageSprite.drawString(55, 8, "TOTAL POWER", &AsciiFont8x16);
+    
+    // Battery Percentage (Divider: 5.1k / 20k+5.1k = 5.1/25.1)
+    uint32_t raw = analogRead(35);
+    float vbat = (float)raw * 3.3 / 4095.0 * (25.1 / 5.1);
+    int batPct = (int)((vbat - 3.2) / (4.2 - 3.2) * 100.0);
+    if (batPct > 100) batPct = 100;
+    if (batPct < 0) batPct = 0;
+    char batBuf[16];
+    snprintf(batBuf, sizeof(batBuf), "B:%d%%", batPct);
+    InkPageSprite.drawString(155, 8, batBuf, &AsciiFont8x16);
+
     char sysBuf[16];
     snprintf(sysBuf, sizeof(sysBuf), "%dW", (int)t.systemPower);
     InkPageSprite.drawString(65, 25, sysBuf, &AsciiFont24x48);
@@ -138,6 +151,17 @@ void loop() {
         InkPageSprite.clear();
         InkPageSprite.drawRect(0, 0, 200, 200, 0);
         InkPageSprite.drawString(60, 90, "PC OFFLINE", &AsciiFont8x16);
+        
+        // Battery Percentage
+        uint32_t raw = analogRead(35);
+        float vbat = (float)raw * 3.3 / 4095.0 * (25.1 / 5.1);
+        int batPct = (int)((vbat - 3.2) / (4.2 - 3.2) * 100.0);
+        if (batPct > 100) batPct = 100;
+        if (batPct < 0) batPct = 0;
+        char batBuf[16];
+        snprintf(batBuf, sizeof(batBuf), "BAT: %d%%", batPct);
+        InkPageSprite.drawString(120, 5, batBuf, &AsciiFont8x16);
+
         InkPageSprite.pushSprite();
         M5.M5Ink.display();
     }

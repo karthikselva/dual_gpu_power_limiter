@@ -1,2 +1,4 @@
 requests
 zeroconf
+fastapi
+uvicorn

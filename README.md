@@ -46,9 +46,10 @@ The system follows a **Producer-Dual Consumer** model with an integrated **Contr
 1.  **Producer (PowerCheck_Serial.ps1):** A hidden PowerShell service that gathers CPU metrics (WMI) and Dual GPU metrics (Nvidia-SMI), including live power draw, temperatures, and set power limits.
 2.  **Transmitter:** 
     *   **Serial (USB):** Sends a 10-value CSV packet to the Arduino every second.
-    *   **UDP (Local):** Broadcasts the same packet on port `9999` for the local Python GUI.
+    *   **UDP (Local/Broadcast):** Broadcasts the same packet on port `9999` for the local Python GUI and Web Client.
 3.  **Consumer A (Arduino):** Displays a high-density landscape dashboard. Features a **Touch Toggle** to switch between "All Metrics" and a "Big Font Focus Mode".
 4.  **Consumer B (Python GUI):** A dark-themed desktop monitor that mirrors the Arduino and provides buttons to dynamically adjust RTX 5080 and RTX 3090 power limits via batch scripts.
+5.  **Consumer C (Web Client):** A responsive mobile-friendly dashboard accessible via IP address (e.g., from an iPhone) on port `8000`.
 
 
 ## 📊 Data Flow & Protocol
@@ -80,23 +81,19 @@ The system uses a **15-value** floating-point string:
 | `g2Pwr` | RTX 3090 Watts | `peakSys` | Session Peak System (W) |
 | `time` | Sync Time (HH:mm) | | |
 
-## 🚀 How to Run
-
-### 1. Arduino Setup
-*   Open the folder in VS Code with **PlatformIO** installed.
-*   **For Wired Display:** Select the `mega2560` or `uno` environment and click **Upload**.
-*   **For Wireless Core Ink:** 
-    *   Open `include/secrets.h` and enter your WiFi SSID and Password.
-    *   Select the `m5stack-coreink` environment and click **Upload**.
-*   **Touch Function (TFT):** Tap the screen anytime to toggle "Focus Mode".
-
-### 2. PC Control Panel
-*   Locate `Run_Control_Panel.bat` in the project root.
-*   **Double-click it** (it will automatically ask for Admin rights).
-*   Click **START TELEMETRY SERVICE** to begin monitoring.
-*   Use the **MAX** and **LOW** buttons to toggle GPU power profiles.
+### 3. Web Client (Mobile/iPhone)
+*   Ensure the Telemetry Service is running.
+*   Run `Run_Web_Client.bat` from the root folder.
+*   The console will display your local IP (e.g., `http://192.168.x.x:8000`).
+*   Open this link on your iPhone or any device on the same network.
 
 ## 🖥 Features
+
+### Web Dashboard (New)
+*   **Mobile Optimized:** Designed specifically for quick viewing on iPhone/Android.
+*   **Real-time SSE:** Uses Server-Sent Events for low-latency updates without page refreshes.
+*   **Zero-Config:** Automatically detects local IP and displays it for easy connection.
+*   **Visual Feedback:** Metrics change color dynamically based on power load.
 
 ### Python GUI & Stability Testing
 *   **Live Mirror:** Real-time data from the PowerShell service.
