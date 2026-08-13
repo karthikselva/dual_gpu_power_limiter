@@ -106,12 +106,20 @@ def parse_robocopy_summary(lines):
 
 
 def parse_file_line(line):
-    """Return (size_bytes, path) for a per-file robocopy line, else None.
+    """Return (size_bytes, path, kind) for a per-file robocopy line, else None.
+
+    kind is "extra" for the destination-side entries /MIR is about to delete,
+    "copy" for everything else.
 
     Lines are tab-delimited as '<status>\\t<size>\\t<path>', but the status
     column is padded inconsistently and is absent for some classes, so this
     anchors on the last field looking like a path and the first all-digit
     field before it rather than on column positions.
+
+    Telling the two apart matters: a deletion line has exactly the same shape
+    as a copy line, so counting both made /MIR's purge phase push the progress
+    total past the pre-flight estimate, pinning the bar at 100% and leaving the
+    ETA with a negative remainder it could only render as "--".
     """
     parts = [p for p in line.split("\t") if p.strip()]
     if len(parts) < 2:
@@ -119,11 +127,12 @@ def parse_file_line(line):
     path = parts[-1].strip()
     if not (re.match(r"^[A-Za-z]:\\", path) or path.startswith("\\\\")):
         return None
+    kind = "extra" if "*EXTRA" in line else "copy"
     for p in parts[:-1]:
         s = p.strip()
         if s.isdigit():
-            return int(s), path
-    return 0, path
+            return int(s), path, kind
+    return 0, path, kind
 
 
 def human_bytes(n):
@@ -771,6 +780,8 @@ class PowerControlGUI:
                         if shown >= 200:
                             self.log("  ... list truncated")
                             break
+            if extras:
+                self.log(f"  ({extras} extra file(s) on the destination)")
             self.log("")
             self.log(f"DRY RUN TOTAL: {files} file(s), {human_bytes(byts)}"
                      + (f", {extras} extra on destination" if extras else ""))
@@ -815,6 +826,7 @@ class PowerControlGUI:
         started = time.time()
         done_files = 0
         done_bytes = 0
+        deleted = 0
         for p in plans:
             if self.sync_cancel.is_set():
                 break
@@ -834,12 +846,20 @@ class PowerControlGUI:
                     if hit:
                         # Per-file lines drive the bar, not the log: a large tree
                         # emits tens of thousands and would swamp the text widget.
-                        size, path = hit
-                        done_files += 1
-                        done_bytes += size
+                        size, path, kind = hit
+                        if kind == "extra":
+                            # /MIR purge phase. Deletions are real work and can
+                            # run for a long time after the last byte is copied,
+                            # but they are not progress against the copy total.
+                            deleted += 1
+                            label = "deleting " + os.path.basename(path.rstrip("\\"))
+                        else:
+                            done_files += 1
+                            done_bytes += size
+                            label = os.path.basename(path)
                         self.sync_queue.put(("progress", (done_files, total_files,
                                                           done_bytes, total_bytes,
-                                                          started, os.path.basename(path))))
+                                                          started, label, deleted)))
                     else:
                         self.sync_queue.put(("log", "  " + line))
                 proc.wait()
@@ -884,7 +904,7 @@ class PowerControlGUI:
             self.sync_queue.put(("finished", (done_files, done_bytes, time.time() - started)))
             self.sync_queue.put(("done", None))
 
-    def apply_progress(self, dfiles, tfiles, dbytes, tbytes, started, current):
+    def apply_progress(self, dfiles, tfiles, dbytes, tbytes, started, current, deleted=0):
         elapsed = max(time.time() - started, 0.001)
         if tbytes > 0:
             frac = min(dbytes / float(tbytes), 1.0)
@@ -893,12 +913,24 @@ class PowerControlGUI:
         else:
             frac = 0.0
         self.sync_prog.config(value=frac * 1000)
+
+        status = f"{dfiles}/{tfiles or '?'}  {human_bytes(dbytes)}/{human_bytes(tbytes)}  {current[:30]}"
+        if deleted:
+            status += f"   [{deleted} deleted]"
+        self.sync_status_lbl.config(text=status, fg=GREEN)
+
         rate = dbytes / elapsed
-        eta = (tbytes - dbytes) / rate if rate > 0 and tbytes > dbytes else None
-        self.sync_status_lbl.config(
-            text=f"{dfiles}/{tfiles or '?'}  {human_bytes(dbytes)}/{human_bytes(tbytes)}  {current[:26]}",
-            fg=GREEN)
-        self.sync_eta_lbl.config(text=f"{human_bytes(rate)}/s  ETA {human_time(eta)}")
+        if tbytes > dbytes and rate > 0:
+            self.sync_eta_lbl.config(
+                text=f"{human_bytes(rate)}/s  ETA {human_time((tbytes - dbytes) / rate)}",
+                fg=AMBER)
+        elif dbytes > 0:
+            # Copy total reached. /MIR still has to walk the destination and
+            # delete extras, which has no byte count to project against - so
+            # say what it is doing rather than showing an empty estimate.
+            self.sync_eta_lbl.config(text="copy done - purging extras...", fg=AMBER)
+        else:
+            self.sync_eta_lbl.config(text="scanning...", fg=FG_DIM)
 
     def finish_sync(self):
         self.sync_running = False
