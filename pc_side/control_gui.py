@@ -7,6 +7,7 @@ import sys
 import socket
 import threading
 import queue
+import time
 import ctypes
 from ctypes import wintypes
 import requests
@@ -58,6 +59,70 @@ def normalise_path(path):
 
 
 TELEMETRY_PORT = 9999
+
+# Total/Copied/Skipped/Mismatch/FAILED/Extras table robocopy prints at the end.
+# /BYTES is required for the byte row to be an exact integer rather than '12.7 k'.
+SUMMARY_ROW = re.compile(
+    r"^\s*(Dirs|Files|Bytes)\s*:\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s*$")
+
+
+def parse_robocopy_summary(lines):
+    """Extract the run summary. Returns {} if it could not be parsed.
+
+    robocopy localises these row labels, so on a non-English Windows display
+    language this yields nothing. Callers must treat {} as 'no totals known'
+    and fall back to an indeterminate progress bar rather than reporting zero.
+    """
+    out = {}
+    for line in lines:
+        m = SUMMARY_ROW.match(line)
+        if m:
+            out[m.group(1).lower()] = {
+                "total": int(m.group(2)), "copied": int(m.group(3)),
+                "skipped": int(m.group(4)), "mismatch": int(m.group(5)),
+                "failed": int(m.group(6)), "extras": int(m.group(7)),
+            }
+    return out
+
+
+def parse_file_line(line):
+    """Return (size_bytes, path) for a per-file robocopy line, else None.
+
+    Lines are tab-delimited as '<status>\\t<size>\\t<path>', but the status
+    column is padded inconsistently and is absent for some classes, so this
+    anchors on the last field looking like a path and the first all-digit
+    field before it rather than on column positions.
+    """
+    parts = [p for p in line.split("\t") if p.strip()]
+    if len(parts) < 2:
+        return None
+    path = parts[-1].strip()
+    if not (re.match(r"^[A-Za-z]:\\", path) or path.startswith("\\\\")):
+        return None
+    for p in parts[:-1]:
+        s = p.strip()
+        if s.isdigit():
+            return int(s), path
+    return 0, path
+
+
+def human_bytes(n):
+    n = float(n or 0)
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if n < 1024 or unit == "TB":
+            return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
+        n /= 1024.0
+
+
+def human_time(seconds):
+    if seconds is None or seconds < 0:
+        return "--"
+    seconds = int(seconds)
+    if seconds < 60:
+        return f"{seconds}s"
+    if seconds < 3600:
+        return f"{seconds // 60}m {seconds % 60:02d}s"
+    return f"{seconds // 3600}h {(seconds % 3600) // 60:02d}m"
 
 
 def bind_telemetry_socket():
@@ -196,6 +261,8 @@ class PowerControlGUI:
                   foreground=[("selected", FG)])
         style.configure("Vertical.TScrollbar", background="#2a2a2a", troughcolor=BG,
                         borderwidth=0, arrowcolor=FG_DIM)
+        style.configure("Sync.Horizontal.TProgressbar", background=GREEN, troughcolor=BG_PANEL,
+                        borderwidth=0, lightcolor=GREEN, darkcolor=GREEN, thickness=14)
 
     # ================= MONITOR TAB =================
     def build_monitor_tab(self, parent):
@@ -380,6 +447,10 @@ class PowerControlGUI:
         tk.Checkbutton(act, text="Dry run", variable=self.dry_run_var, bg=BG, fg=AMBER,
                        selectcolor=BG_INPUT, activebackground=BG, activeforeground=AMBER,
                        font=("Segoe UI", 8)).pack(side="left", padx=(0, 8))
+        self.skip_cloud_var = tk.BooleanVar(value=getattr(self, "saved_skip_cloud", True))
+        tk.Checkbutton(act, text="Skip cloud-only files", variable=self.skip_cloud_var, bg=BG,
+                       fg="#5dade2", selectcolor=BG_INPUT, activebackground=BG,
+                       activeforeground="#5dade2", font=("Segoe UI", 8)).pack(side="left", padx=(0, 8))
         tk.Button(act, text="🗑 REMOVE", command=self.remove_sync_pair, bg="#7f2418", fg=FG,
                   font=("Segoe UI", 8, "bold"), width=10).pack(side="left", padx=2)
         self.sync_sel_btn = tk.Button(act, text="▶ SYNC SELECTED", command=lambda: self.start_sync(False),
@@ -388,6 +459,21 @@ class PowerControlGUI:
         self.sync_all_btn = tk.Button(act, text="▶▶ SYNC ALL", command=lambda: self.start_sync(True),
                                       bg="#27ae60", fg=FG, font=("Segoe UI", 8, "bold"), width=12)
         self.sync_all_btn.pack(side="right", padx=2)
+
+        # --- progress ---
+        prog = tk.Frame(parent, bg=BG)
+        prog.pack(fill="x", padx=10, pady=(4, 0))
+        self.sync_prog = ttk.Progressbar(prog, mode="determinate", maximum=1000,
+                                         style="Sync.Horizontal.TProgressbar")
+        self.sync_prog.pack(fill="x")
+        stat = tk.Frame(parent, bg=BG)
+        stat.pack(fill="x", padx=10, pady=(1, 0))
+        self.sync_status_lbl = tk.Label(stat, text="idle", bg=BG, fg=FG_DIM,
+                                        font=("Consolas", 8), anchor="w")
+        self.sync_status_lbl.pack(side="left")
+        self.sync_eta_lbl = tk.Label(stat, text="", bg=BG, fg=AMBER,
+                                     font=("Consolas", 8), anchor="e")
+        self.sync_eta_lbl.pack(side="right")
 
         # --- log ---
         log_frame = tk.LabelFrame(parent, text="LOG", bg=BG, fg=FG_DIM,
@@ -464,7 +550,7 @@ class PowerControlGUI:
         self.sync_log.see("end")
         self.sync_log.config(state="disabled")
 
-    def build_robocopy_cmd(self, src, dst, mirror, dry_run):
+    def build_robocopy_cmd(self, src, dst, mirror, dry_run, skip_cloud=True):
         """Flags chosen for an SMB target on the WD MyCloud (Linux-backed).
 
         /MT:32  SMB is round-trip bound on small files; threading hides latency.
@@ -473,13 +559,33 @@ class PowerControlGUI:
         /XJ     do not follow junctions.
         /R:2 /W:5  the default is a million retries at 30s - one locked file
                 would otherwise wedge the run indefinitely.
+
+        /BYTES so the summary reports exact integers, which the pre-flight
+        parses to size the progress bar and ETA.
+
+        /XA:O excludes cloud placeholder files. This is the single most
+        important flag when the source contains an iCloud or OneDrive folder:
+        reading a dehydrated file forces the sync client to download it, so a
+        plain copy silently turns into tens of GB of downloads and appears to
+        hang on every placeholder. Skipping them keeps the backup to what is
+        actually on local disk.
         """
         cmd = ["robocopy", src, dst, "/MIR" if mirror else "/E",
                "/DCOPY:DAT", "/COPY:DAT", "/MT:32", "/FFT", "/XJ",
-               "/R:2", "/W:5", "/NP", "/NDL", "/TEE"]
+               "/R:2", "/W:5", "/NP", "/NDL", "/TEE", "/BYTES"]
+        if skip_cloud:
+            cmd.append("/XA:O")
         if dry_run:
             cmd.append("/L")
         return cmd
+
+    def set_sync_buttons(self, enabled):
+        if enabled:
+            self.sync_sel_btn.config(state="normal", bg="#2980b9")
+            self.sync_all_btn.config(state="normal", bg="#27ae60")
+        else:
+            self.sync_sel_btn.config(state="disabled", bg=BG_INPUT)
+            self.sync_all_btn.config(state="disabled", bg=BG_INPUT)
 
     def start_sync(self, run_all):
         if self.sync_running:
@@ -493,42 +599,155 @@ class PowerControlGUI:
             messagebox.showinfo("Nothing to do", "No sync pairs selected.")
             return
 
-        mirrors = [i for i in targets if self.sync_pairs[i].get("mirror")]
-        if mirrors and not self.dry_run_var.get():
-            names = "\n".join(f"  {self.sync_pairs[i]['dst']}" for i in mirrors)
-            if not messagebox.askyesno(
-                    "Confirm mirror",
-                    "MIRROR deletes anything on the NAS that is no longer on the PC.\n\n"
-                    f"Affected destinations:\n{names}\n\nProceed?"):
-                return
-
         self.sync_running = True
-        self.sync_sel_btn.config(state="disabled", bg=BG_INPUT)
-        self.sync_all_btn.config(state="disabled", bg=BG_INPUT)
-        threading.Thread(target=self.run_sync_worker, args=(targets,), daemon=True).start()
+        self.set_sync_buttons(False)
+        self.sync_prog.config(value=0)
+        self.sync_status_lbl.config(text="scanning...", fg=FG_DIM)
+        self.sync_eta_lbl.config(text="")
+        self.log("")
+        self.log("Scanning (robocopy /L) - nothing is written during this pass...")
+        threading.Thread(target=self.preflight_worker, args=(targets,), daemon=True).start()
 
-    def run_sync_worker(self, targets):
-        dry = self.dry_run_var.get()
+    def preflight_worker(self, targets):
+        """Cost the run with /L before writing anything.
+
+        The dry pass is what makes a determinate progress bar and an ETA
+        possible at all: it produces the file count and byte total that the
+        real run is then measured against.
+        """
+        skip_cloud = self.skip_cloud_var.get()
+        plans = []
         for idx in targets:
             pair = self.sync_pairs[idx]
             src = normalise_path(pair["src"])
             dst = normalise_path(pair["dst"])
-            self.sync_queue.put(("log", "=" * 62))
-            self.sync_queue.put(("log", f"{'[DRY RUN] ' if dry else ''}{src}  ->  {dst}"))
-
             if not os.path.isdir(src):
                 self.sync_queue.put(("log", f"  SKIPPED - source not found: {src}"))
                 self.sync_queue.put(("result", (idx, "src missing")))
                 continue
+            cmd = self.build_robocopy_cmd(src, dst, pair.get("mirror"), True, skip_cloud)
+            lines = []
+            try:
+                proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                        text=True, encoding="utf-8", errors="replace",
+                                        creationflags=0x08000000)
+                for line in proc.stdout:
+                    lines.append(line.rstrip())
+                proc.wait()
+                rc = proc.returncode
+            except FileNotFoundError:
+                self.sync_queue.put(("log", "  ERROR - robocopy not found on PATH"))
+                self.sync_queue.put(("result", (idx, "no robocopy")))
+                continue
+            except Exception as e:
+                self.sync_queue.put(("log", f"  ERROR during scan - {e}"))
+                self.sync_queue.put(("result", (idx, "scan failed")))
+                continue
+            if rc >= 8:
+                self.sync_queue.put(("log", f"  SCAN FAILED ({rc}) - {dst} unreachable?"))
+                self.sync_queue.put(("result", (idx, f"scan failed ({rc})")))
+                continue
+            plans.append({
+                "idx": idx, "src": src, "dst": dst,
+                "mirror": bool(pair.get("mirror")),
+                "summary": parse_robocopy_summary(lines),
+                "lines": lines,
+            })
+        self.sync_queue.put(("preflight", plans))
 
-            cmd = self.build_robocopy_cmd(src, dst, pair.get("mirror"), dry)
+    def on_preflight(self, plans):
+        """Main-thread handler: report the dry run, or show totals and confirm."""
+        if not plans:
+            self.log("Nothing to sync.")
+            self.sync_status_lbl.config(text="nothing to do", fg=FG_DIM)
+            self.finish_sync()
+            return
+
+        files = sum(p["summary"].get("files", {}).get("copied", 0) for p in plans)
+        byts = sum(p["summary"].get("bytes", {}).get("copied", 0) for p in plans)
+        extras = sum(p["summary"].get("files", {}).get("extras", 0) for p in plans)
+        parsed = all(p["summary"] for p in plans)
+
+        if self.dry_run_var.get():
+            for p in plans:
+                self.log("=" * 62)
+                self.log(f"[DRY RUN] {p['src']}  ->  {p['dst']}")
+                shown = 0
+                for line in p["lines"]:
+                    if parse_file_line(line):
+                        self.log("  " + line)
+                        shown += 1
+                        if shown >= 200:
+                            self.log("  ... list truncated")
+                            break
+            self.log("")
+            self.log(f"DRY RUN TOTAL: {files} file(s), {human_bytes(byts)}"
+                     + (f", {extras} extra on destination" if extras else ""))
+            self.sync_status_lbl.config(
+                text=f"dry run: {files} file(s), {human_bytes(byts)}", fg=AMBER)
+            self.finish_sync()
+            return
+
+        if files == 0 and extras == 0:
+            self.log("Already up to date - nothing to copy.")
+            self.sync_status_lbl.config(text="already up to date", fg=GREEN)
+            for p in plans:
+                self.sync_pairs[p["idx"]]["last_run"] = datetime.now().strftime("%d-%m %H:%M")
+                self.sync_pairs[p["idx"]]["last_result"] = "no changes"
+            self.finish_sync()
+            return
+
+        detail = [f"{files} file(s) to copy", f"{human_bytes(byts)} to transfer"]
+        if extras:
+            if any(p["mirror"] for p in plans):
+                detail.append(f"{extras} file(s) on the NAS will be DELETED")
+            else:
+                detail.append(f"{extras} extra file(s) on the NAS will be left in place")
+        if not parsed:
+            detail.append("totals unavailable - progress will be approximate")
+
+        routes = "\n".join(f"  {p['src']}\n     -> {p['dst']}"
+                           + ("   [MIRROR]" if p["mirror"] else "") for p in plans)
+        body = "\n".join("  - " + d for d in detail)
+        if not messagebox.askyesno("Confirm sync", f"{routes}\n\n{body}\n\nProceed?"):
+            self.log("Cancelled - nothing was written.")
+            self.sync_status_lbl.config(text="cancelled", fg=FG_DIM)
+            self.finish_sync()
+            return
+
+        self.sync_status_lbl.config(text="starting...", fg=GREEN)
+        threading.Thread(target=self.run_sync_worker,
+                         args=(plans, files, byts), daemon=True).start()
+
+    def run_sync_worker(self, plans, total_files, total_bytes):
+        skip_cloud = self.skip_cloud_var.get()
+        started = time.time()
+        done_files = 0
+        done_bytes = 0
+        for p in plans:
+            idx, src, dst = p["idx"], p["src"], p["dst"]
+            self.sync_queue.put(("log", "=" * 62))
+            self.sync_queue.put(("log", f"{src}  ->  {dst}"))
+            cmd = self.build_robocopy_cmd(src, dst, p["mirror"], False, skip_cloud)
             try:
                 proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                         text=True, encoding="utf-8", errors="replace",
                                         creationflags=0x08000000)
                 for line in proc.stdout:
                     line = line.rstrip()
-                    if line:
+                    if not line:
+                        continue
+                    hit = parse_file_line(line)
+                    if hit:
+                        # Per-file lines drive the bar, not the log: a large tree
+                        # emits tens of thousands and would swamp the text widget.
+                        size, path = hit
+                        done_files += 1
+                        done_bytes += size
+                        self.sync_queue.put(("progress", (done_files, total_files,
+                                                          done_bytes, total_bytes,
+                                                          started, os.path.basename(path))))
+                    else:
                         self.sync_queue.put(("log", "  " + line))
                 proc.wait()
                 rc = proc.returncode
@@ -545,11 +764,10 @@ class PowerControlGUI:
             # 8+ is a real failure.
             if rc >= 8:
                 verdict = f"FAILED ({rc})"
-                if dst.startswith(("\\\\", "//")) or re.match(r"^[A-Za-z]:", dst):
-                    self.sync_queue.put(("log",
-                        "  Hint: if the destination is a mapped drive, note this app runs "
-                        "elevated and elevated sessions do not see user drive mappings. "
-                        "Use the \\\\server\\share form instead."))
+                self.sync_queue.put(("log",
+                    "  Hint: if the destination was a mapped drive, note this app runs "
+                    "elevated and elevated sessions do not see user drive mappings. "
+                    "Use the \\\\server\\share form instead."))
             elif rc == 0:
                 verdict = "no changes"
             else:
@@ -557,42 +775,78 @@ class PowerControlGUI:
             self.sync_queue.put(("log", f"  -> {verdict}"))
             self.sync_queue.put(("result", (idx, verdict)))
 
+        self.sync_queue.put(("finished", (done_files, done_bytes, time.time() - started)))
         self.sync_queue.put(("done", None))
 
+    def apply_progress(self, dfiles, tfiles, dbytes, tbytes, started, current):
+        elapsed = max(time.time() - started, 0.001)
+        if tbytes > 0:
+            frac = min(dbytes / float(tbytes), 1.0)
+        elif tfiles > 0:
+            frac = min(dfiles / float(tfiles), 1.0)
+        else:
+            frac = 0.0
+        self.sync_prog.config(value=frac * 1000)
+        rate = dbytes / elapsed
+        eta = (tbytes - dbytes) / rate if rate > 0 and tbytes > dbytes else None
+        self.sync_status_lbl.config(
+            text=f"{dfiles}/{tfiles or '?'}  {human_bytes(dbytes)}/{human_bytes(tbytes)}  {current[:26]}",
+            fg=GREEN)
+        self.sync_eta_lbl.config(text=f"{human_bytes(rate)}/s  ETA {human_time(eta)}")
+
+    def finish_sync(self):
+        self.sync_running = False
+        self.set_sync_buttons(True)
+        self.save_sync_config()
+        self.refresh_sync_tree()
+
     def drain_sync_queue(self):
+        last_progress = None
         try:
             while True:
                 kind, payload = self.sync_queue.get_nowait()
                 if kind == "log":
                     self.log(payload)
+                elif kind == "progress":
+                    last_progress = payload      # coalesce: only the newest matters
+                elif kind == "preflight":
+                    self.on_preflight(payload)
+                elif kind == "finished":
+                    n, b, secs = payload
+                    self.sync_prog.config(value=1000)
+                    self.sync_status_lbl.config(
+                        text=f"done: {n} file(s), {human_bytes(b)} in {human_time(secs)}",
+                        fg=GREEN)
+                    self.sync_eta_lbl.config(text="")
                 elif kind == "result":
                     idx, verdict = payload
                     if 0 <= idx < len(self.sync_pairs):
                         self.sync_pairs[idx]["last_run"] = datetime.now().strftime("%d-%m %H:%M")
                         self.sync_pairs[idx]["last_result"] = verdict
                 elif kind == "done":
-                    self.sync_running = False
-                    self.sync_sel_btn.config(state="normal", bg="#2980b9")
-                    self.sync_all_btn.config(state="normal", bg="#27ae60")
-                    self.save_sync_config()
-                    self.refresh_sync_tree()
+                    self.finish_sync()
         except queue.Empty:
             pass
+        if last_progress:
+            self.apply_progress(*last_progress)
         self.root.after(200, self.drain_sync_queue)
 
     def load_sync_config(self):
+        self.saved_skip_cloud = True
         if os.path.exists(self.sync_config_path):
             try:
                 with open(self.sync_config_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
                 self.sync_pairs = data.get("pairs", [])
+                self.saved_skip_cloud = data.get("skip_cloud", True)
             except Exception:
                 self.sync_pairs = []
 
     def save_sync_config(self):
         try:
             with open(self.sync_config_path, "w", encoding="utf-8") as f:
-                json.dump({"pairs": self.sync_pairs}, f, indent=2)
+                json.dump({"pairs": self.sync_pairs,
+                           "skip_cloud": bool(self.skip_cloud_var.get())}, f, indent=2)
         except Exception as e:
             messagebox.showerror("Error", f"Failed to save sync config: {e}")
 
