@@ -1,23 +1,86 @@
 {
   "pairs": [
     {
-      "src": "F:\\Documents",
-      "dst": "X:\\Documents-Backup",
-      "mirror": false,
+      "src": "F:\\Superbuddy Content",
+      "dst": "Y:\\Superbuddy Content",
+      "mirror": true,
       "last_run": "",
       "last_result": ""
     },
     {
-      "src": "G:\\",
-      "dst": "Z:\\",
-      "mirror": false,
+      "src": "F:\\Surface Backup",
+      "dst": "Y:\\Surface Backup",
+      "mirror": true,
+      "last_run": "",
+      "last_result": ""
+    },
+    {
+      "src": "F:\\Documents",
+      "dst": "Y:\\Documents",
+      "mirror": true,
+      "last_run": "",
+      "last_result": ""
+    },
+    {
+      "src": "F:\\VMWare MacOS Tools",
+      "dst": "Y:\\VMWare MacOS Tools",
+      "mirror": true,
+      "last_run": "",
+      "last_result": ""
+    },
+    {
+      "src": "F:\\DVR",
+      "dst": "Y:\\DVR",
+      "mirror": true,
+      "last_run": "",
+      "last_result": ""
+    },
+    {
+      "src": "F:\\Entertainment",
+      "dst": "Y:\\Entertainment",
+      "mirror": true,
       "last_run": "",
       "last_result": ""
     },
     {
       "src": "F:\\Past Work",
       "dst": "Y:\\Past Work",
-      "mirror": false,
+      "mirror": true,
+      "last_run": "",
+      "last_result": ""
+    },
+    {
+      "src": "G:\\.claude",
+      "dst": "Z:\\.claude",
+      "mirror": true,
+      "last_run": "",
+      "last_result": ""
+    },
+    {
+      "src": "G:\\cloudflared",
+      "dst": "Z:\\cloudflared",
+      "mirror": true,
+      "last_run": "",
+      "last_result": ""
+    },
+    {
+      "src": "G:\\Photos",
+      "dst": "Z:\\Photos",
+      "mirror": true,
+      "last_run": "",
+      "last_result": ""
+    },
+    {
+      "src": "G:\\UploadedPhotos",
+      "dst": "Z:\\UploadedPhotos",
+      "mirror": true,
+      "last_run": "",
+      "last_result": ""
+    },
+    {
+      "src": "G:\\immich-app",
+      "dst": "Z:\\immich-app",
+      "mirror": true,
       "last_run": "",
       "last_result": ""
     }

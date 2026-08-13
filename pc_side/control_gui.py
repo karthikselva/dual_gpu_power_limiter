@@ -217,6 +217,12 @@ class PowerControlGUI:
         self.sync_pairs = []          # [{name, src, dst, mirror, last_run, last_result}]
         self.sync_running = False
         self.sync_queue = queue.Queue()
+        # Cancellation. The worker threads are daemons, so the thing that has to
+        # be stopped explicitly is the robocopy child - killing the GUI would
+        # otherwise orphan it writing into a pipe nobody reads.
+        self.sync_cancel = threading.Event()
+        self.current_proc = None
+        self.proc_lock = threading.Lock()
         self.load_sync_config()
 
         self.wled_discovery = WLEDDiscovery(update_callback=lambda: self.root.after(0, self.refresh_wled_list))
@@ -479,6 +485,10 @@ class PowerControlGUI:
         self.sync_all_btn = tk.Button(act, text="▶▶ SYNC ALL", command=lambda: self.start_sync(True),
                                       bg="#27ae60", fg=FG, font=("Segoe UI", 8, "bold"), width=12)
         self.sync_all_btn.pack(side="right", padx=2)
+        self.sync_stop_btn = tk.Button(act, text="■ STOP", command=self.cancel_sync,
+                                       state="disabled", bg=BG_INPUT, fg=FG,
+                                       font=("Segoe UI", 8, "bold"), width=8)
+        self.sync_stop_btn.pack(side="right", padx=2)
 
         # --- progress ---
         prog = tk.Frame(parent, bg=BG)
@@ -605,9 +615,51 @@ class PowerControlGUI:
         if enabled:
             self.sync_sel_btn.config(state="normal", bg="#2980b9")
             self.sync_all_btn.config(state="normal", bg="#27ae60")
+            self.sync_stop_btn.config(state="disabled", bg=BG_INPUT)
         else:
             self.sync_sel_btn.config(state="disabled", bg=BG_INPUT)
             self.sync_all_btn.config(state="disabled", bg=BG_INPUT)
+            self.sync_stop_btn.config(state="normal", bg="#c0392b")
+
+    def spawn_robocopy(self, cmd):
+        """Start robocopy and register it so cancel_sync can terminate it.
+
+        Returns None if a cancel arrived between the check and the spawn, which
+        would otherwise leave an unregistered process running past the stop.
+        """
+        with self.proc_lock:
+            if self.sync_cancel.is_set():
+                return None
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                    text=True, encoding="utf-8", errors="replace",
+                                    creationflags=0x08000000)
+            self.current_proc = proc
+            return proc
+
+    def clear_proc(self):
+        with self.proc_lock:
+            self.current_proc = None
+
+    def cancel_sync(self):
+        """Stop the run. Safe at any point.
+
+        robocopy writes a file then stamps its timestamp, so a file killed
+        mid-write ends up with both the wrong size and the wrong timestamp and
+        is simply recopied next run. Nothing already completed is damaged.
+        """
+        if not self.sync_running:
+            return
+        self.sync_cancel.set()
+        self.sync_stop_btn.config(state="disabled", bg=BG_INPUT)
+        self.sync_status_lbl.config(text="stopping...", fg=AMBER)
+        self.log("STOP requested - terminating robocopy...")
+        with self.proc_lock:
+            proc = self.current_proc
+        if proc is not None and proc.poll() is None:
+            try:
+                proc.terminate()
+            except Exception as e:
+                self.log(f"  could not terminate: {e}")
 
     def start_sync(self, run_all):
         if self.sync_running:
@@ -622,6 +674,7 @@ class PowerControlGUI:
             return
 
         self.sync_running = True
+        self.sync_cancel.clear()
         self.set_sync_buttons(False)
         self.sync_prog.config(value=0)
         self.sync_status_lbl.config(text="scanning...", fg=FG_DIM)
@@ -640,6 +693,8 @@ class PowerControlGUI:
         skip_cloud = self.skip_cloud_var.get()
         plans = []
         for idx in targets:
+            if self.sync_cancel.is_set():
+                break
             pair = self.sync_pairs[idx]
             src = normalise_path(pair["src"])
             dst = normalise_path(pair["dst"])
@@ -647,16 +702,18 @@ class PowerControlGUI:
                 self.sync_queue.put(("log", f"  SKIPPED - source not found: {src}"))
                 self.sync_queue.put(("result", (idx, "src missing")))
                 continue
+            self.sync_queue.put(("log", f"  scanning {src} ..."))
             cmd = self.build_robocopy_cmd(src, dst, pair.get("mirror"), True, skip_cloud)
             lines = []
             try:
-                proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                        text=True, encoding="utf-8", errors="replace",
-                                        creationflags=0x08000000)
+                proc = self.spawn_robocopy(cmd)
+                if proc is None:
+                    break
                 for line in proc.stdout:
                     lines.append(line.rstrip())
                 proc.wait()
                 rc = proc.returncode
+                self.clear_proc()
             except FileNotFoundError:
                 self.sync_queue.put(("log", "  ERROR - robocopy not found on PATH"))
                 self.sync_queue.put(("result", (idx, "no robocopy")))
@@ -675,7 +732,11 @@ class PowerControlGUI:
                 "summary": parse_robocopy_summary(lines),
                 "lines": lines,
             })
-        self.sync_queue.put(("preflight", plans))
+        if self.sync_cancel.is_set():
+            self.sync_queue.put(("log", "Scan stopped - nothing was written."))
+            self.sync_queue.put(("cancelled", None))
+        else:
+            self.sync_queue.put(("preflight", plans))
 
     def on_preflight(self, plans):
         """Main-thread handler: report the dry run, or show totals and confirm."""
@@ -747,14 +808,16 @@ class PowerControlGUI:
         done_files = 0
         done_bytes = 0
         for p in plans:
+            if self.sync_cancel.is_set():
+                break
             idx, src, dst = p["idx"], p["src"], p["dst"]
             self.sync_queue.put(("log", "=" * 62))
             self.sync_queue.put(("log", f"{src}  ->  {dst}"))
             cmd = self.build_robocopy_cmd(src, dst, p["mirror"], False, skip_cloud)
             try:
-                proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                        text=True, encoding="utf-8", errors="replace",
-                                        creationflags=0x08000000)
+                proc = self.spawn_robocopy(cmd)
+                if proc is None:
+                    break
                 for line in proc.stdout:
                     line = line.rstrip()
                     if not line:
@@ -773,6 +836,7 @@ class PowerControlGUI:
                         self.sync_queue.put(("log", "  " + line))
                 proc.wait()
                 rc = proc.returncode
+                self.clear_proc()
             except FileNotFoundError:
                 self.sync_queue.put(("log", "  ERROR - robocopy not found on PATH"))
                 self.sync_queue.put(("result", (idx, "no robocopy")))
@@ -781,6 +845,12 @@ class PowerControlGUI:
                 self.sync_queue.put(("log", f"  ERROR - {e}"))
                 self.sync_queue.put(("result", (idx, "error")))
                 continue
+
+            if self.sync_cancel.is_set():
+                # Terminated mid-run: the exit code is from the kill, not the copy.
+                self.sync_queue.put(("log", "  -> STOPPED"))
+                self.sync_queue.put(("result", (idx, "stopped")))
+                break
 
             # robocopy: 0-7 success (0 nothing to do, 1 copied, 2 extras, 4 mismatch);
             # 8+ is a real failure.
@@ -797,8 +867,14 @@ class PowerControlGUI:
             self.sync_queue.put(("log", f"  -> {verdict}"))
             self.sync_queue.put(("result", (idx, verdict)))
 
-        self.sync_queue.put(("finished", (done_files, done_bytes, time.time() - started)))
-        self.sync_queue.put(("done", None))
+        if self.sync_cancel.is_set():
+            self.sync_queue.put(("log",
+                f"STOPPED after {done_files} file(s), {human_bytes(done_bytes)}. "
+                "Any part-written file is recopied on the next run."))
+            self.sync_queue.put(("cancelled", None))
+        else:
+            self.sync_queue.put(("finished", (done_files, done_bytes, time.time() - started)))
+            self.sync_queue.put(("done", None))
 
     def apply_progress(self, dfiles, tfiles, dbytes, tbytes, started, current):
         elapsed = max(time.time() - started, 0.001)
@@ -818,6 +894,8 @@ class PowerControlGUI:
 
     def finish_sync(self):
         self.sync_running = False
+        self.sync_cancel.clear()
+        self.clear_proc()
         self.set_sync_buttons(True)
         self.save_sync_config()
         self.refresh_sync_tree()
@@ -833,6 +911,10 @@ class PowerControlGUI:
                     last_progress = payload      # coalesce: only the newest matters
                 elif kind == "preflight":
                     self.on_preflight(payload)
+                elif kind == "cancelled":
+                    self.sync_status_lbl.config(text="stopped", fg=AMBER)
+                    self.sync_eta_lbl.config(text="")
+                    self.finish_sync()
                 elif kind == "finished":
                     n, b, secs = payload
                     self.sync_prog.config(value=1000)
@@ -1075,6 +1157,15 @@ class PowerControlGUI:
             self.sys_peak_lbl.config(text="SESSION PEAK: 0.0W")
 
     def on_closing(self):
+        # Without this the robocopy child outlives the window, writing into a
+        # pipe with no reader until the buffer fills and it blocks forever.
+        if self.sync_running:
+            if not messagebox.askyesno(
+                    "Sync running",
+                    "A sync is still running. Closing will stop it.\n\n"
+                    "Part-written files are recopied next run. Close anyway?"):
+                return
+            self.cancel_sync()
         self.stop_telemetry()
         self.root.destroy()
 
