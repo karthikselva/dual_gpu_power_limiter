@@ -6,6 +6,21 @@
       "mirror": false,
       "last_run": "",
       "last_result": ""
+    },
+    {
+      "src": "G:\\",
+      "dst": "Z:\\",
+      "mirror": false,
+      "last_run": "",
+      "last_result": ""
+    },
+    {
+      "src": "F:\\Past Work",
+      "dst": "Y:\\Past Work",
+      "mirror": false,
+      "last_run": "",
+      "last_result": ""
     }
-  ]
+  ],
+  "skip_cloud": true
 }

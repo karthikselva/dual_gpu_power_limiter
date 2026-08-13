@@ -66,6 +66,26 @@ SUMMARY_ROW = re.compile(
     r"^\s*(Dirs|Files|Bytes)\s*:\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s*$")
 
 
+# Excluded from every sync. These sit at the root of a Windows volume and deny
+# access even to an elevated process, so syncing a drive root without them
+# costs /R:2 /W:5 of retry stalls per entry and buries the real output in
+# access-denied noise. Matched by name at any depth, not by full path.
+EXCLUDE_DIRS = [
+    "$RECYCLE.BIN",
+    "System Volume Information",
+    "found.000",          # chkdsk salvage
+    ".Trashes",           # macOS writes these onto shared volumes
+    "#recycle",           # NAS-side recycle bin
+]
+EXCLUDE_FILES = [
+    "pagefile.sys",
+    "hiberfil.sys",
+    "swapfile.sys",
+    "DumpStack.log",
+    "DumpStack.log.tmp",
+]
+
+
 def parse_robocopy_summary(lines):
     """Extract the run summary. Returns {} if it could not be parsed.
 
@@ -573,6 +593,8 @@ class PowerControlGUI:
         cmd = ["robocopy", src, dst, "/MIR" if mirror else "/E",
                "/DCOPY:DAT", "/COPY:DAT", "/MT:32", "/FFT", "/XJ",
                "/R:2", "/W:5", "/NP", "/NDL", "/TEE", "/BYTES"]
+        cmd += ["/XD"] + EXCLUDE_DIRS
+        cmd += ["/XF"] + EXCLUDE_FILES
         if skip_cloud:
             cmd.append("/XA:O")
         if dry_run:
