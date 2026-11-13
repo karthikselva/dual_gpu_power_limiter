@@ -30,10 +30,12 @@ while($true) {
     $gpuMetrics = @()
     $gpuOut = cmd /c "`"$nvismi`" --query-gpu=power.draw,temperature.gpu,power.limit --format=csv,noheader,nounits 2>&1"
     foreach ($line in $gpuOut) {
-        if ($line -match "(\d+\.\d+),\s*(\d+),\s*(\d+\.\d+)") {
+        # Accept integers or decimals in every field: driver 621.x started printing
+        # temperature.gpu as "47.13" instead of "47", which silently zeroed both GPUs.
+        if ($line -match "^\s*(\d+(?:\.\d+)?),\s*(\d+(?:\.\d+)?),\s*(\d+(?:\.\d+)?)") {
             $gpuMetrics += [PSCustomObject]@{
                 Power = [double]$matches[1]
-                Temp  = [int]$matches[2]
+                Temp  = [int][math]::Round([double]$matches[2])
                 Limit = [double]$matches[3]
             }
         }
